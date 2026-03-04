@@ -1,0 +1,11 @@
+﻿.vs
+backend/TodoApi/bin
+backend/TodoApi/obj
+backend/TodoApi/TodoApi.csproj.user
+backend/TodoApi.Tests/bin
+backend/TodoApi.Tests/obj
+ralph
+ralph.ps1
+readme.md
+log.txt.txt
+backend/TodoApi/todos.db
