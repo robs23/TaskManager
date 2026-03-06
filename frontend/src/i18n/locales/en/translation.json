@@ -1,0 +1,67 @@
+{
+  "app": {
+    "title": "Todo App",
+    "subtitle": "Track tasks and stay organized.",
+    "loading": "Loading todos...",
+    "refresh": "Refresh"
+  },
+  "header": {
+    "user": "User",
+    "userName": "User Name",
+    "language": "Language"
+  },
+  "buttons": {
+    "add": "Add",
+    "adding": "Adding...",
+    "create": "Create",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "remove": "Remove",
+    "addSubtask": "Add subtask"
+  },
+  "form": {
+    "newTask": "New task",
+    "taskName": "Task name",
+    "description": "Description",
+    "deadline": "Deadline",
+    "notes": "Notes",
+    "parentTask": "Parent task",
+    "noParentTopLevel": "No parent (top-level)",
+    "descriptionOptional": "Description (optional)",
+    "notesOptional": "Notes (optional)",
+    "nameRequired": "Please enter a task name."
+  },
+  "common": {
+    "none": "None",
+    "pending": "Pending",
+    "complete": "Complete",
+    "blocked": "Blocked",
+    "doable": "Doable",
+    "parent": "Parent",
+    "dependencies": "Dependencies",
+    "addDependency": "Add dependency",
+    "selectTodo": "Select todo",
+    "noParent": "No parent",
+    "emptyState": "No todos yet. Add your first task above.",
+    "completeDependenciesToStart": "Complete dependencies to start this task."
+  },
+  "todoItem": {
+    "markAsComplete": "Mark as complete",
+    "markAsIncomplete": "Mark as incomplete"
+  },
+  "errors": {
+    "fetchTodos": "Failed to fetch todos.",
+    "loadTodos": "Unable to load todos right now. Please try again.",
+    "createTodo": "Failed to create todo.",
+    "addTodo": "Unable to add todo. Please try again.",
+    "updateTodo": "Failed to update todo.",
+    "updateTodoMessage": "Unable to update todo. Please try again.",
+    "addDependency": "Failed to add dependency.",
+    "addDependencyMessage": "Unable to add dependency. Please try again.",
+    "removeDependency": "Failed to remove dependency.",
+    "removeDependencyMessage": "Unable to remove dependency. Please try again.",
+    "deleteTodo": "Failed to delete todo.",
+    "deleteTodoMessage": "Unable to delete todo. Please try again."
+  }
+}

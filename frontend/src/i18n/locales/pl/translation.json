@@ -1,0 +1,67 @@
+{
+  "app": {
+    "title": "Aplikacja zadań",
+    "subtitle": "Śledź zadania i zachowaj porządek.",
+    "loading": "Ładowanie zadań...",
+    "refresh": "Odśwież"
+  },
+  "header": {
+    "user": "Użytkownik",
+    "userName": "Nazwa użytkownika",
+    "language": "Język"
+  },
+  "buttons": {
+    "add": "Dodaj",
+    "adding": "Dodawanie...",
+    "create": "Utwórz",
+    "cancel": "Anuluj",
+    "edit": "Edytuj",
+    "delete": "Usuń",
+    "remove": "Usuń",
+    "addSubtask": "Dodaj podzadanie"
+  },
+  "form": {
+    "newTask": "Nowe zadanie",
+    "taskName": "Nazwa zadania",
+    "description": "Opis",
+    "deadline": "Termin",
+    "notes": "Notatki",
+    "parentTask": "Zadanie nadrzędne",
+    "noParentTopLevel": "Brak nadrzędnego (poziom główny)",
+    "descriptionOptional": "Opis (opcjonalnie)",
+    "notesOptional": "Notatki (opcjonalnie)",
+    "nameRequired": "Podaj nazwę zadania."
+  },
+  "common": {
+    "none": "Brak",
+    "pending": "Oczekujące",
+    "complete": "Ukończone",
+    "blocked": "Zablokowane",
+    "doable": "Wykonalne",
+    "parent": "Nadrzędne",
+    "dependencies": "Zależności",
+    "addDependency": "Dodaj zależność",
+    "selectTodo": "Wybierz zadanie",
+    "noParent": "Brak nadrzędnego",
+    "emptyState": "Brak zadań. Dodaj pierwsze zadanie powyżej.",
+    "completeDependenciesToStart": "Ukończ zależności, aby rozpocząć to zadanie."
+  },
+  "todoItem": {
+    "markAsComplete": "Oznacz jako ukończone",
+    "markAsIncomplete": "Oznacz jako nieukończone"
+  },
+  "errors": {
+    "fetchTodos": "Nie udało się pobrać zadań.",
+    "loadTodos": "Nie można teraz wczytać zadań. Spróbuj ponownie.",
+    "createTodo": "Nie udało się utworzyć zadania.",
+    "addTodo": "Nie można dodać zadania. Spróbuj ponownie.",
+    "updateTodo": "Nie udało się zaktualizować zadania.",
+    "updateTodoMessage": "Nie można zaktualizować zadania. Spróbuj ponownie.",
+    "addDependency": "Nie udało się dodać zależności.",
+    "addDependencyMessage": "Nie można dodać zależności. Spróbuj ponownie.",
+    "removeDependency": "Nie udało się usunąć zależności.",
+    "removeDependencyMessage": "Nie można usunąć zależności. Spróbuj ponownie.",
+    "deleteTodo": "Nie udało się usunąć zadania.",
+    "deleteTodoMessage": "Nie można usunąć zadania. Spróbuj ponownie."
+  }
+}
