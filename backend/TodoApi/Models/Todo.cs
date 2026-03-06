@@ -1,9 +1,22 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace TodoApi.Models;
 
 public class Todo
 {
     public int Id { get; set; }
-    public string Title { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public DateTime? Deadline { get; set; }
+    public string? Notes { get; set; }
     public bool IsCompleted { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public int? ParentId { get; set; }
+    public Todo? Parent { get; set; }
+    public ICollection<Todo> Children { get; set; } = new List<Todo>();
+    public ICollection<Todo> Dependencies { get; set; } = new List<Todo>();
+    public ICollection<Todo> DependentTodos { get; set; } = new List<Todo>();
+
+    [NotMapped]
+    public bool Doable => Dependencies?.All(dependency => dependency.IsCompleted) ?? true;
 }

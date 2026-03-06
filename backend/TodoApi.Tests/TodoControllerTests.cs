@@ -14,8 +14,8 @@ public class TodoControllerTests
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
         context.Todos.AddRange(
-            new Todo { Title = "First", CreatedAt = DateTime.UtcNow },
-            new Todo { Title = "Second", CreatedAt = DateTime.UtcNow });
+            new Todo { Name = "First", CreatedAt = DateTime.UtcNow },
+            new Todo { Name = "Second", CreatedAt = DateTime.UtcNow });
         await context.SaveChangesAsync();
 
         var controller = new TodoController(context);
@@ -23,7 +23,7 @@ public class TodoControllerTests
         var result = await controller.GetTodos();
 
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
-        var todos = Assert.IsAssignableFrom<IEnumerable<Todo>>(okResult.Value);
+        var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoResponse>>(okResult.Value);
         Assert.Equal(2, todos.Count());
     }
 
@@ -32,7 +32,7 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Title = "Find me", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { Name = "Find me", CreatedAt = DateTime.UtcNow };
         context.Todos.Add(todo);
         await context.SaveChangesAsync();
 
@@ -41,9 +41,9 @@ public class TodoControllerTests
         var result = await controller.GetTodo(todo.Id);
 
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
-        var fetched = Assert.IsType<Todo>(okResult.Value);
+        var fetched = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
         Assert.Equal(todo.Id, fetched.Id);
-        Assert.Equal(todo.Title, fetched.Title);
+        Assert.Equal(todo.Name, fetched.Name);
     }
 
     [Fact]
@@ -59,37 +59,72 @@ public class TodoControllerTests
     }
 
     [Fact]
-    public async Task CreateTodo_CreatesTodo()
+    public async Task CreateTodo_CreatesTodoWithExtendedProperties()
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
+        var parent = new Todo { Name = "Parent", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(parent);
+        await context.SaveChangesAsync();
         var controller = new TodoController(context);
-        var request = new TodoController.CreateTodoRequest { Title = "New item" };
+        var deadline = new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var request = new TodoController.CreateTodoRequest
+        {
+            Name = "New item",
+            Description = "Description",
+            Deadline = deadline,
+            Notes = "Notes",
+            ParentId = parent.Id
+        };
 
         var result = await controller.CreateTodo(request);
 
         var created = Assert.IsType<CreatedAtActionResult>(result.Result);
-        var todo = Assert.IsType<Todo>(created.Value);
-        Assert.Equal("New item", todo.Title);
+        var todo = Assert.IsType<TodoController.TodoResponse>(created.Value);
+        Assert.Equal("New item", todo.Name);
+        Assert.Equal("Description", todo.Description);
+        Assert.Equal(deadline, todo.Deadline);
+        Assert.Equal("Notes", todo.Notes);
+        Assert.Equal(parent.Id, todo.ParentId);
+        Assert.True(todo.Doable);
         Assert.False(todo.IsCompleted);
 
         var saved = await context.Todos.FindAsync(todo.Id);
         Assert.NotNull(saved);
+        var parentWithChildren = await context.Todos
+            .Include(t => t.Children)
+            .FirstAsync(t => t.Id == parent.Id);
+        Assert.Contains(parentWithChildren.Children, child => child.Id == todo.Id);
     }
 
     [Fact]
-    public async Task UpdateTodo_UpdatesTodo()
+    public async Task UpdateTodo_UpdatesTodoWithExtendedProperties()
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Title = "Old", CreatedAt = DateTime.UtcNow };
-        context.Todos.Add(todo);
+        var originalParent = new Todo { Name = "Original parent", CreatedAt = DateTime.UtcNow };
+        var newParent = new Todo { Name = "New parent", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo
+        {
+            Name = "Old",
+            Description = "Old description",
+            Deadline = new DateTime(2029, 12, 31, 0, 0, 0, DateTimeKind.Utc),
+            Notes = "Old notes",
+            Parent = originalParent,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Todos.AddRange(originalParent, newParent, todo);
         await context.SaveChangesAsync();
 
         var controller = new TodoController(context);
+        var newDeadline = new DateTime(2031, 5, 10, 0, 0, 0, DateTimeKind.Utc);
         var request = new TodoController.UpdateTodoRequest
         {
-            Title = "Updated",
+            Name = "Updated",
+            Description = "Updated description",
+            Deadline = newDeadline,
+            Notes = "Updated notes",
+            ParentId = newParent.Id,
             IsCompleted = true
         };
 
@@ -99,7 +134,11 @@ public class TodoControllerTests
 
         var updated = await context.Todos.FindAsync(todo.Id);
         Assert.NotNull(updated);
-        Assert.Equal("Updated", updated!.Title);
+        Assert.Equal("Updated", updated!.Name);
+        Assert.Equal("Updated description", updated.Description);
+        Assert.Equal(newDeadline, updated.Deadline);
+        Assert.Equal("Updated notes", updated.Notes);
+        Assert.Equal(newParent.Id, updated.ParentId);
         Assert.True(updated.IsCompleted);
     }
 
@@ -111,7 +150,7 @@ public class TodoControllerTests
         var controller = new TodoController(context);
         var request = new TodoController.UpdateTodoRequest
         {
-            Title = "Updated",
+            Name = "Updated",
             IsCompleted = true
         };
 
@@ -121,11 +160,101 @@ public class TodoControllerTests
     }
 
     [Fact]
+    public async Task GetTodo_ReturnsDoableBasedOnDependencies()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var dependency = new Todo { Name = "Dependency", IsCompleted = false, CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(dependency, todo);
+        await context.SaveChangesAsync();
+        todo.Dependencies.Add(dependency);
+        await context.SaveChangesAsync();
+
+        var controller = new TodoController(context);
+
+        var result = await controller.GetTodo(todo.Id);
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var fetched = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
+        Assert.False(fetched.Doable);
+
+        dependency.IsCompleted = true;
+        await context.SaveChangesAsync();
+
+        var updatedResult = await controller.GetTodo(todo.Id);
+        var updatedOk = Assert.IsType<OkObjectResult>(updatedResult.Result);
+        var updated = Assert.IsType<TodoController.TodoResponse>(updatedOk.Value);
+        Assert.True(updated.Doable);
+    }
+
+    [Fact]
+    public async Task AddDependency_AddsDependency()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var dependency = new Todo { Name = "Dependency", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(todo, dependency);
+        await context.SaveChangesAsync();
+
+        var controller = new TodoController(context);
+
+        var result = await controller.AddDependency(todo.Id, dependency.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        var updated = await context.Todos
+            .Include(t => t.Dependencies)
+            .FirstAsync(t => t.Id == todo.Id);
+        Assert.Contains(updated.Dependencies, item => item.Id == dependency.Id);
+    }
+
+    [Fact]
+    public async Task AddDependency_ReturnsBadRequestForCircularDependency()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var dependency = new Todo { Name = "Dependency", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(todo, dependency);
+        await context.SaveChangesAsync();
+        dependency.Dependencies.Add(todo);
+        await context.SaveChangesAsync();
+
+        var controller = new TodoController(context);
+
+        var result = await controller.AddDependency(todo.Id, dependency.Id);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task RemoveDependency_RemovesDependency()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var dependency = new Todo { Name = "Dependency", CreatedAt = DateTime.UtcNow };
+        todo.Dependencies.Add(dependency);
+        context.Todos.AddRange(todo, dependency);
+        await context.SaveChangesAsync();
+
+        var controller = new TodoController(context);
+
+        var result = await controller.RemoveDependency(todo.Id, dependency.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        var updated = await context.Todos
+            .Include(t => t.Dependencies)
+            .FirstAsync(t => t.Id == todo.Id);
+        Assert.Empty(updated.Dependencies);
+    }
+
+    [Fact]
     public async Task DeleteTodo_RemovesTodo()
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Title = "Delete", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { Name = "Delete", CreatedAt = DateTime.UtcNow };
         context.Todos.Add(todo);
         await context.SaveChangesAsync();
 
@@ -158,3 +287,4 @@ public class TodoControllerTests
         return new TodoDbContext(options);
     }
 }
+
