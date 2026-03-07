@@ -5,6 +5,7 @@ import AddTodoForm from './components/AddTodoForm'
 import type { ParentOption, TodoDraft } from './components/AddTodoForm'
 import Header from './components/Header'
 import Modal from './components/Modal'
+import Toolbar from './components/Toolbar'
 import TodoList from './components/TodoList'
 
 const API_BASE = '/api/todos'
@@ -166,6 +167,7 @@ function App() {
   const [selectedParentId, setSelectedParentId] = useState<number | null>(null)
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false)
   const [editingTodoId, setEditingTodoId] = useState<number | null>(null)
+  const [collapsedTodoIds, setCollapsedTodoIds] = useState<Set<number>>(new Set<number>())
 
   const loadTodos = async (): Promise<void> => {
     setIsLoading(true)
@@ -193,6 +195,18 @@ function App() {
   }, [])
 
   const { roots, descendantMap } = useMemo(() => buildTodoHierarchy(todos), [todos])
+  const parentTodoIds = useMemo(
+    () =>
+      todos
+        .filter((todo) => todos.some((candidate) => candidate.parentId === todo.id))
+        .map((todo) => todo.id),
+    [todos],
+  )
+  const allParentsCollapsed = useMemo(
+    () =>
+      parentTodoIds.length > 0 && parentTodoIds.every((parentTodoId) => collapsedTodoIds.has(parentTodoId)),
+    [collapsedTodoIds, parentTodoIds],
+  )
   const editingTodo = useMemo(
     () => (editingTodoId === null ? null : todos.find((todo) => todo.id === editingTodoId) ?? null),
     [editingTodoId, todos],
@@ -556,6 +570,38 @@ function App() {
     setShowCreateForm(true)
   }
 
+  const handleToggleCollapsed = (todoId: number): void => {
+    setCollapsedTodoIds((previous) => {
+      const next = new Set(previous)
+      if (next.has(todoId)) {
+        next.delete(todoId)
+      } else {
+        next.add(todoId)
+      }
+
+      return next
+    })
+  }
+
+  const handleToggleAllCollapsed = (): void => {
+    if (parentTodoIds.length === 0) {
+      return
+    }
+
+    setCollapsedTodoIds((previous) => {
+      const allCollapsed = parentTodoIds.every((parentTodoId) => previous.has(parentTodoId))
+      if (allCollapsed) {
+        const next = new Set(previous)
+        parentTodoIds.forEach((parentTodoId) => next.delete(parentTodoId))
+        return next
+      }
+
+      const next = new Set(previous)
+      parentTodoIds.forEach((parentTodoId) => next.add(parentTodoId))
+      return next
+    })
+  }
+
   const handleStartEdit = (todo: Todo): void => {
     setEditingTodoId(todo.id)
     setSelectedParentId(todo.parentId ?? null)
@@ -612,6 +658,13 @@ function App() {
         onToggleCreate={handleToggleCreateForm}
         isCreateVisible={showCreateForm}
       />
+      <Toolbar
+        ariaLabel={t('toolbar.ariaLabel')}
+        collapseAllLabel={allParentsCollapsed ? t('toolbar.expandAll') : t('toolbar.collapseAll')}
+        isAllCollapsed={allParentsCollapsed}
+        isCollapseToggleDisabled={parentTodoIds.length === 0}
+        onToggleAllCollapsed={handleToggleAllCollapsed}
+      />
 
       <section className="app-body">
         {error ? (
@@ -654,11 +707,13 @@ function App() {
             todos={roots}
             allTodos={todos}
             descendantMap={descendantMap}
+            collapsedTodoIds={collapsedTodoIds}
             onToggle={handleToggle}
             onDelete={handleDelete}
             onEdit={handleReparent}
             onStartEdit={handleStartEdit}
             onAddSubtask={handleAddSubtask}
+            onToggleCollapsed={handleToggleCollapsed}
             onAddDependency={handleAddDependency}
             onRemoveDependency={handleRemoveDependency}
             processingIds={processingIds}

@@ -10,6 +10,11 @@
     "userName": "Nazwa użytkownika",
     "language": "Język"
   },
+  "toolbar": {
+    "ariaLabel": "Pasek narzędzi zadań",
+    "collapseAll": "Zwiń wszystkie",
+    "expandAll": "Rozwiń wszystkie"
+  },
   "buttons": {
     "add": "Dodaj",
     "adding": "Dodawanie...",
@@ -55,7 +60,9 @@
   "todoItem": {
     "markAsComplete": "Oznacz jako ukończone",
     "markAsIncomplete": "Oznacz jako nieukończone",
-    "due": "Termin"
+    "due": "Termin",
+    "expandSubtasks": "Rozwiń podzadania",
+    "collapseSubtasks": "Zwiń podzadania"
   },
   "errors": {
     "fetchTodos": "Nie udało się pobrać zadań.",

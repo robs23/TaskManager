@@ -10,6 +10,11 @@
     "userName": "User Name",
     "language": "Language"
   },
+  "toolbar": {
+    "ariaLabel": "Todo toolbar",
+    "collapseAll": "Collapse All",
+    "expandAll": "Expand All"
+  },
   "buttons": {
     "add": "Add",
     "adding": "Adding...",
@@ -55,7 +60,9 @@
   "todoItem": {
     "markAsComplete": "Mark as complete",
     "markAsIncomplete": "Mark as incomplete",
-    "due": "Due"
+    "due": "Due",
+    "expandSubtasks": "Expand subtasks",
+    "collapseSubtasks": "Collapse subtasks"
   },
   "errors": {
     "fetchTodos": "Failed to fetch todos.",

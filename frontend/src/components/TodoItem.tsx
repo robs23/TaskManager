@@ -16,6 +16,7 @@ export interface Todo {
   isCompleted: boolean
   createdAt: string
   parentId: number | null
+  tags: string[]
   doable: boolean
   dependencies: TodoDependencySummary[]
   children: Todo[]
@@ -25,11 +26,13 @@ export interface TodoItemProps {
   todo: Todo
   allTodos: Todo[]
   descendantMap: Map<number, Set<number>>
+  collapsedTodoIds: Set<number>
   onToggle: (todo: Todo) => Promise<void>
   onDelete: (todo: Todo) => Promise<void>
   onEdit: (todo: Todo, nextParentId: number | null) => Promise<void>
   onStartEdit: (todo: Todo) => void
   onAddSubtask: (todoId: number) => void
+  onToggleCollapsed: (todoId: number) => void
   onAddDependency: (todo: Todo, dependsOnId: number) => Promise<void>
   onRemoveDependency: (todo: Todo, dependsOnId: number) => Promise<void>
   isProcessing: boolean
@@ -53,15 +56,18 @@ function TodoItem({
   onEdit,
   onStartEdit,
   onAddSubtask,
+  onToggleCollapsed,
   onAddDependency,
   onRemoveDependency,
   allTodos,
   descendantMap,
+  collapsedTodoIds,
   isProcessing,
   processingIds,
   depth,
 }: TodoItemProps) {
   const { t, i18n } = useTranslation()
+  const maxVisibleTags = 3
   const [selectedDependencyId, setSelectedDependencyId] = useState<string>('')
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
   const invalidParents = descendantMap.get(todo.id) ?? new Set<number>()
@@ -75,6 +81,8 @@ function TodoItem({
   )
   const isBlocked = !todo.doable && !todo.isCompleted
   const isToggleLocked = isProcessing || isBlocked
+  const hasChildren = todo.children.length > 0
+  const isCollapsed = collapsedTodoIds.has(todo.id)
   const deadlineDate = todo.deadline
     ? /^\d{4}-\d{2}-\d{2}$/.test(todo.deadline)
       ? new Date(
@@ -91,6 +99,8 @@ function TodoItem({
         }).format(deadlineDate)
       : null
   const deadlineLabel = t('todoItem.due')
+  const visibleTags = todo.tags.slice(0, maxVisibleTags)
+  const hasHiddenTags = todo.tags.length > maxVisibleTags
 
   return (
     <li className="todo-node">
@@ -99,6 +109,21 @@ function TodoItem({
           depth > 0 ? ' todo-item--subtask' : ''
         }${formattedDeadline ? ' todo-item--with-deadline' : ''}`}
       >
+        {hasChildren ? (
+          <button
+            className={`todo-collapse-toggle${isCollapsed ? '' : ' is-expanded'}`}
+            type="button"
+            onClick={() => onToggleCollapsed(todo.id)}
+            disabled={isProcessing}
+            aria-label={isCollapsed ? t('todoItem.expandSubtasks') : t('todoItem.collapseSubtasks')}
+            title={isCollapsed ? t('todoItem.expandSubtasks') : t('todoItem.collapseSubtasks')}
+            aria-expanded={!isCollapsed}
+          >
+            {isCollapsed ? '▶' : '▼'}
+          </button>
+        ) : (
+          <span className="todo-collapse-placeholder" aria-hidden="true" />
+        )}
         <button
           className={`todo-toggle${todo.isCompleted ? ' is-completed' : ''}`}
           type="button"
@@ -114,18 +139,31 @@ function TodoItem({
         </button>
         <div className={`todo-content${formattedDeadline ? ' todo-content--with-deadline' : ''}`}>
           <div className="todo-text">
-            <span className="todo-title" title={todo.name}>
-              {todo.name}
-            </span>
+            <div className="todo-title-row">
+              <span className="todo-title" title={todo.name}>
+                {todo.name}
+              </span>
+              {visibleTags.length > 0 ? (
+                <span className="todo-tag-list" aria-label="Todo tags">
+                  {visibleTags.map((tag) => (
+                    <span className="todo-tag-badge" key={`${todo.id}-${tag}`} title={tag}>
+                      <span className="todo-tag-badge-label">{tag}</span>
+                    </span>
+                  ))}
+                  {hasHiddenTags ? (
+                    <span className="todo-tag-badge todo-tag-badge--more" title={t('form.tags')}>
+                      <span className="todo-tag-badge-label">...</span>
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
+            </div>
             {formattedDeadline ? (
               <span className="todo-deadline" title={`${deadlineLabel}: ${formattedDeadline}`}>
                 {deadlineLabel}: {formattedDeadline}
               </span>
             ) : null}
           </div>
-          <span className={`todo-badge${todo.doable ? ' todo-badge--doable' : ' todo-badge--blocked'}`}>
-            {todo.doable ? t('common.doable') : t('common.blocked')}
-          </span>
         </div>
         <div className="todo-actions">
           <button
@@ -280,7 +318,7 @@ function TodoItem({
         </div>
       ) : null}
 
-      {todo.children.length > 0 ? (
+      {hasChildren && !isCollapsed ? (
         <ul className="todo-children">
           {todo.children.map((child) => (
             <TodoItem
@@ -291,10 +329,12 @@ function TodoItem({
               onEdit={onEdit}
               onStartEdit={onStartEdit}
               onAddSubtask={onAddSubtask}
+              onToggleCollapsed={onToggleCollapsed}
               onAddDependency={onAddDependency}
               onRemoveDependency={onRemoveDependency}
               allTodos={allTodos}
               descendantMap={descendantMap}
+              collapsedTodoIds={collapsedTodoIds}
               isProcessing={processingIds.includes(child.id)}
               processingIds={processingIds}
               depth={depth + 1}
