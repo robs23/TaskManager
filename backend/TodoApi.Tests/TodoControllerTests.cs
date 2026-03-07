@@ -130,7 +130,9 @@ public class TodoControllerTests
 
         var result = await controller.UpdateTodo(todo.Id, request);
 
-        Assert.IsType<NoContentResult>(result);
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
+        Assert.Equal(newParent.Id, response.ParentId);
 
         var updated = await context.Todos.FindAsync(todo.Id);
         Assert.NotNull(updated);
@@ -140,6 +142,93 @@ public class TodoControllerTests
         Assert.Equal("Updated notes", updated.Notes);
         Assert.Equal(newParent.Id, updated.ParentId);
         Assert.True(updated.IsCompleted);
+    }
+
+    [Fact]
+    public async Task UpdateTodo_AllowsClearingParentBySettingNullParentId()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var parent = new Todo { Name = "Parent", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo
+        {
+            Name = "Child",
+            Parent = parent,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Todos.AddRange(parent, todo);
+        await context.SaveChangesAsync();
+        var controller = new TodoController(context);
+        var request = new TodoController.UpdateTodoRequest
+        {
+            Name = "Child updated",
+            ParentId = null,
+            IsCompleted = false
+        };
+
+        var result = await controller.UpdateTodo(todo.Id, request);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
+        Assert.Null(response.ParentId);
+
+        var updated = await context.Todos.FindAsync(todo.Id);
+        Assert.NotNull(updated);
+        Assert.Null(updated!.ParentId);
+    }
+
+    [Fact]
+    public async Task UpdateTodo_ReturnsBadRequestWhenParentTodoDoesNotExist()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { Name = "Todo", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = new TodoController(context);
+        var request = new TodoController.UpdateTodoRequest
+        {
+            Name = "Updated",
+            ParentId = 99999,
+            IsCompleted = false
+        };
+
+        var result = await controller.UpdateTodo(todo.Id, request);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal("Parent todo does not exist.", badRequest.Value);
+
+        var unchanged = await context.Todos.FindAsync(todo.Id);
+        Assert.NotNull(unchanged);
+        Assert.Null(unchanged!.ParentId);
+    }
+
+    [Fact]
+    public async Task UpdateTodo_ReturnsBadRequestWhenParentIsDescendant()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var root = new Todo { Name = "Root", CreatedAt = DateTime.UtcNow };
+        var child = new Todo { Name = "Child", Parent = root, CreatedAt = DateTime.UtcNow };
+        var grandchild = new Todo { Name = "Grandchild", Parent = child, CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(root, child, grandchild);
+        await context.SaveChangesAsync();
+        var controller = new TodoController(context);
+        var request = new TodoController.UpdateTodoRequest
+        {
+            Name = "Root",
+            ParentId = grandchild.Id,
+            IsCompleted = false
+        };
+
+        var result = await controller.UpdateTodo(root.Id, request);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal("Circular parent relationships are not allowed.", badRequest.Value);
+
+        var unchanged = await context.Todos.FindAsync(root.Id);
+        Assert.NotNull(unchanged);
+        Assert.Null(unchanged!.ParentId);
     }
 
     [Fact]
@@ -156,7 +245,7 @@ public class TodoControllerTests
 
         var result = await controller.UpdateTodo(999, request);
 
-        Assert.IsType<NotFoundResult>(result);
+        Assert.IsType<NotFoundResult>(result.Result);
     }
 
     [Fact]

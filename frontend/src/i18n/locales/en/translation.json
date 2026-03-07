@@ -13,7 +13,9 @@
   "toolbar": {
     "ariaLabel": "Todo toolbar",
     "collapseAll": "Collapse All",
-    "expandAll": "Expand All"
+    "expandAll": "Expand All",
+    "showDoable": "Show Doable",
+    "showAll": "Show All"
   },
   "buttons": {
     "add": "Add",
@@ -62,7 +64,8 @@
     "markAsIncomplete": "Mark as incomplete",
     "due": "Due",
     "expandSubtasks": "Expand subtasks",
-    "collapseSubtasks": "Collapse subtasks"
+    "collapseSubtasks": "Collapse subtasks",
+    "dragHandle": "Drag todo"
   },
   "errors": {
     "fetchTodos": "Failed to fetch todos.",
@@ -84,3 +87,4 @@
     "editTodo": "Edit Todo"
   }
 }
+

@@ -151,13 +151,13 @@ function AddTodoForm({
           <label className="todo-field-label" htmlFor="todo-description">
             {t('form.description')}
           </label>
-          <textarea
+          <input
             id="todo-description"
-            className="todo-input todo-textarea"
+            className="todo-input"
+            type="text"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             placeholder={t('form.descriptionOptional')}
-            rows={3}
             disabled={isSubmitting}
           />
         </div>
@@ -167,7 +167,7 @@ function AddTodoForm({
           </label>
           <textarea
             id="todo-notes"
-            className="todo-input todo-textarea"
+            className="todo-input todo-textarea todo-textarea--notes"
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             placeholder={t('form.notesOptional')}

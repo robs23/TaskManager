@@ -13,7 +13,9 @@
   "toolbar": {
     "ariaLabel": "Pasek narzędzi zadań",
     "collapseAll": "Zwiń wszystkie",
-    "expandAll": "Rozwiń wszystkie"
+    "expandAll": "Rozwiń wszystkie",
+    "showDoable": "Pokaż wykonalne",
+    "showAll": "Pokaż wszystkie"
   },
   "buttons": {
     "add": "Dodaj",
@@ -62,7 +64,8 @@
     "markAsIncomplete": "Oznacz jako nieukończone",
     "due": "Termin",
     "expandSubtasks": "Rozwiń podzadania",
-    "collapseSubtasks": "Zwiń podzadania"
+    "collapseSubtasks": "Zwiń podzadania",
+    "dragHandle": "Przeciągnij zadanie"
   },
   "errors": {
     "fetchTodos": "Nie udało się pobrać zadań.",
@@ -84,3 +87,4 @@
     "editTodo": "Edytuj zadanie"
   }
 }
+

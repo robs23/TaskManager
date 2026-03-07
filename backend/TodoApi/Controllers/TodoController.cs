@@ -116,17 +116,40 @@ public class TodoController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
-    public async Task<IActionResult> UpdateTodo(int id, [FromBody] UpdateTodoRequest request)
+    public async Task<ActionResult<TodoResponse>> UpdateTodo(int id, [FromBody] UpdateTodoRequest request)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Name))
         {
             return BadRequest("Name is required.");
         }
 
-        var todo = await _context.Todos.FindAsync(id);
+        var todo = await _context.Todos
+            .Include(t => t.Dependencies)
+            .Include(t => t.Tags)
+            .FirstOrDefaultAsync(t => t.Id == id);
         if (todo is null)
         {
             return NotFound();
+        }
+
+        if (request.ParentId.HasValue)
+        {
+            if (request.ParentId.Value == id)
+            {
+                return BadRequest("A todo cannot be its own parent.");
+            }
+
+            var parentExists = await _context.Todos.AnyAsync(t => t.Id == request.ParentId.Value);
+            if (!parentExists)
+            {
+                return BadRequest("Parent todo does not exist.");
+            }
+
+            var createsCircularRelationship = await CreatesCircularParentRelationshipAsync(id, request.ParentId.Value);
+            if (createsCircularRelationship)
+            {
+                return BadRequest("Circular parent relationships are not allowed.");
+            }
         }
 
         todo.Name = request.Name.Trim();
@@ -137,7 +160,7 @@ public class TodoController : ControllerBase
         todo.IsCompleted = request.IsCompleted;
 
         await _context.SaveChangesAsync();
-        return NoContent();
+        return Ok(ToResponse(todo));
     }
 
     [HttpPost("{id:int}/dependencies/{dependsOnId:int}")]
@@ -325,5 +348,31 @@ public class TodoController : ControllerBase
     private static string? NormalizeTagName(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
+    }
+
+    private async Task<bool> CreatesCircularParentRelationshipAsync(int todoId, int proposedParentId)
+    {
+        var visited = new HashSet<int>();
+        int? currentParentId = proposedParentId;
+
+        while (currentParentId.HasValue)
+        {
+            if (currentParentId.Value == todoId)
+            {
+                return true;
+            }
+
+            if (!visited.Add(currentParentId.Value))
+            {
+                return true;
+            }
+
+            currentParentId = await _context.Todos
+                .Where(t => t.Id == currentParentId.Value)
+                .Select(t => t.ParentId)
+                .SingleOrDefaultAsync();
+        }
+
+        return false;
     }
 }

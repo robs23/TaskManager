@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import './App.css'
 import AddTodoForm from './components/AddTodoForm'
@@ -157,6 +157,22 @@ const buildTodoHierarchy = (
   return { roots, descendantMap }
 }
 
+const filterTodoHierarchy = (items: Todo[], showOnlyDoable: boolean): Todo[] => {
+  if (!showOnlyDoable) {
+    return items
+  }
+
+  const filterNodes = (nodes: Todo[]): Todo[] =>
+    nodes
+      .filter((node) => node.doable)
+      .map((node) => ({
+        ...node,
+        children: filterNodes(node.children),
+      }))
+
+  return filterNodes(items)
+}
+
 function App() {
   const { t } = useTranslation()
   const [todos, setTodos] = useState<Todo[]>([])
@@ -168,6 +184,10 @@ function App() {
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false)
   const [editingTodoId, setEditingTodoId] = useState<number | null>(null)
   const [collapsedTodoIds, setCollapsedTodoIds] = useState<Set<number>>(new Set<number>())
+  const [draggingTodoId, setDraggingTodoId] = useState<number | null>(null)
+  const [activeDropTodoId, setActiveDropTodoId] = useState<number | null>(null)
+  const [isRootDropActive, setIsRootDropActive] = useState<boolean>(false)
+  const [showOnlyDoable, setShowOnlyDoable] = useState<boolean>(false)
 
   const loadTodos = async (): Promise<void> => {
     setIsLoading(true)
@@ -215,6 +235,7 @@ function App() {
     () => todos.map((todo) => ({ id: todo.id, name: todo.name })),
     [todos],
   )
+  const visibleRoots = useMemo(() => filterTodoHierarchy(roots, showOnlyDoable), [roots, showOnlyDoable])
 
   const setProcessing = (id: number, isProcessing: boolean): void => {
     setProcessingIds((prev) => {
@@ -225,6 +246,37 @@ function App() {
       return prev.filter((value) => value !== id)
     })
   }
+
+  const clearDropTargets = useCallback((): void => {
+    setActiveDropTodoId(null)
+    setIsRootDropActive(false)
+  }, [])
+
+  const clearDragState = useCallback((): void => {
+    setDraggingTodoId(null)
+    clearDropTargets()
+  }, [clearDropTargets])
+
+  useEffect(() => {
+    if (draggingTodoId === null) {
+      return
+    }
+
+    const handleEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      event.preventDefault()
+      clearDragState()
+    }
+
+    window.addEventListener('keydown', handleEscape)
+
+    return () => {
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [clearDragState, draggingTodoId])
 
   const syncTodoTags = async (
     todoId: number,
@@ -564,6 +616,74 @@ function App() {
     }
   }
 
+  const handleDragStart = (todoId: number): void => {
+    if (processingIds.includes(todoId)) {
+      return
+    }
+
+    setDraggingTodoId(todoId)
+    setActiveDropTodoId(null)
+    setIsRootDropActive(false)
+    setError('')
+  }
+
+  const handleDragEnd = (): void => {
+    clearDragState()
+  }
+
+  const handleDragOverTodo = (todoId: number | null): void => {
+    if (draggingTodoId === null) {
+      return
+    }
+
+    setActiveDropTodoId(todoId)
+    setIsRootDropActive(false)
+  }
+
+  const handleDragOverRoot = (): void => {
+    if (draggingTodoId === null) {
+      return
+    }
+
+    setActiveDropTodoId(null)
+    setIsRootDropActive(true)
+  }
+
+  const handleDropOnTodo = (targetTodoId: number): void => {
+    if (draggingTodoId === null) {
+      return
+    }
+
+    const draggedTodo = todos.find((todo) => todo.id === draggingTodoId)
+    if (!draggedTodo || processingIds.includes(draggedTodo.id)) {
+      clearDragState()
+      return
+    }
+
+    const targetDescendants = descendantMap.get(draggedTodo.id) ?? new Set<number>()
+    const isInvalidTarget = targetTodoId === draggedTodo.id || targetDescendants.has(targetTodoId)
+    clearDragState()
+    if (isInvalidTarget) {
+      return
+    }
+
+    void handleReparent(draggedTodo, targetTodoId)
+  }
+
+  const handleDropOnRoot = (): void => {
+    if (draggingTodoId === null) {
+      return
+    }
+
+    const draggedTodo = todos.find((todo) => todo.id === draggingTodoId)
+    clearDragState()
+    if (!draggedTodo || processingIds.includes(draggedTodo.id)) {
+      return
+    }
+
+    void handleReparent(draggedTodo, null)
+  }
+
   const handleAddSubtask = (todoId: number): void => {
     setEditingTodoId(null)
     setSelectedParentId(todoId)
@@ -600,6 +720,10 @@ function App() {
       parentTodoIds.forEach((parentTodoId) => next.add(parentTodoId))
       return next
     })
+  }
+
+  const handleToggleDoableFilter = (): void => {
+    setShowOnlyDoable((previous) => !previous)
   }
 
   const handleStartEdit = (todo: Todo): void => {
@@ -664,7 +788,16 @@ function App() {
         isAllCollapsed={allParentsCollapsed}
         isCollapseToggleDisabled={parentTodoIds.length === 0}
         onToggleAllCollapsed={handleToggleAllCollapsed}
-      />
+      >
+        <button
+          className={`toolbar-filter-button${showOnlyDoable ? ' is-active' : ''}`}
+          type="button"
+          onClick={handleToggleDoableFilter}
+          aria-pressed={showOnlyDoable}
+        >
+          {showOnlyDoable ? t('toolbar.showAll') : t('toolbar.showDoable')}
+        </button>
+      </Toolbar>
 
       <section className="app-body">
         {error ? (
@@ -704,7 +837,7 @@ function App() {
           <p className="loading">{t('app.loading')}</p>
         ) : (
           <TodoList
-            todos={roots}
+            todos={visibleRoots}
             allTodos={todos}
             descendantMap={descendantMap}
             collapsedTodoIds={collapsedTodoIds}
@@ -716,6 +849,16 @@ function App() {
             onToggleCollapsed={handleToggleCollapsed}
             onAddDependency={handleAddDependency}
             onRemoveDependency={handleRemoveDependency}
+            draggingTodoId={draggingTodoId}
+            activeDropTodoId={activeDropTodoId}
+            isRootDropActive={isRootDropActive}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragOverTodo={handleDragOverTodo}
+            onDropOnTodo={handleDropOnTodo}
+            onDragOverRoot={handleDragOverRoot}
+            onDropOnRoot={handleDropOnRoot}
+            onClearDropTargets={clearDropTargets}
             processingIds={processingIds}
           />
         )}

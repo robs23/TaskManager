@@ -35,6 +35,12 @@ export interface TodoItemProps {
   onToggleCollapsed: (todoId: number) => void
   onAddDependency: (todo: Todo, dependsOnId: number) => Promise<void>
   onRemoveDependency: (todo: Todo, dependsOnId: number) => Promise<void>
+  draggingTodoId: number | null
+  activeDropTodoId: number | null
+  onDragStart: (todoId: number) => void
+  onDragEnd: () => void
+  onDragOverTodo: (todoId: number | null) => void
+  onDropOnTodo: (todoId: number) => void
   isProcessing: boolean
   processingIds: number[]
   depth: number
@@ -59,6 +65,12 @@ function TodoItem({
   onToggleCollapsed,
   onAddDependency,
   onRemoveDependency,
+  draggingTodoId,
+  activeDropTodoId,
+  onDragStart,
+  onDragEnd,
+  onDragOverTodo,
+  onDropOnTodo,
   allTodos,
   descendantMap,
   collapsedTodoIds,
@@ -70,6 +82,7 @@ function TodoItem({
   const maxVisibleTags = 3
   const [selectedDependencyId, setSelectedDependencyId] = useState<string>('')
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
+  const [isDraggingHandle, setIsDraggingHandle] = useState<boolean>(false)
   const invalidParents = descendantMap.get(todo.id) ?? new Set<number>()
   const availableParents = allTodos.filter(
     (option) => option.id !== todo.id && (!invalidParents.has(option.id) || option.id === todo.parentId),
@@ -83,6 +96,15 @@ function TodoItem({
   const isToggleLocked = isProcessing || isBlocked
   const hasChildren = todo.children.length > 0
   const isCollapsed = collapsedTodoIds.has(todo.id)
+  const isDraggingThisTodo = draggingTodoId === todo.id
+  const isDropTarget = activeDropTodoId === todo.id
+  const draggedTodoDescendants =
+    draggingTodoId === null ? new Set<number>() : descendantMap.get(draggingTodoId) ?? new Set<number>()
+  const canAcceptDrop =
+    draggingTodoId !== null &&
+    draggingTodoId !== todo.id &&
+    !draggedTodoDescendants.has(todo.id) &&
+    !isProcessing
   const deadlineDate = todo.deadline
     ? /^\d{4}-\d{2}-\d{2}$/.test(todo.deadline)
       ? new Date(
@@ -107,8 +129,77 @@ function TodoItem({
       <div
         className={`todo-item${todo.isCompleted ? ' is-completed' : ''}${
           depth > 0 ? ' todo-item--subtask' : ''
-        }${formattedDeadline ? ' todo-item--with-deadline' : ''}`}
+        }${formattedDeadline ? ' todo-item--with-deadline' : ''}${
+          isDraggingThisTodo ? ' is-dragging' : ''
+        }${isDropTarget ? ' is-drop-target' : ''}`}
+        onDragOver={(event) => {
+          if (!canAcceptDrop) {
+            return
+          }
+
+          event.preventDefault()
+          event.stopPropagation()
+          event.dataTransfer.dropEffect = 'move'
+          onDragOverTodo(todo.id)
+        }}
+        onDrop={(event) => {
+          if (!canAcceptDrop) {
+            return
+          }
+
+          event.preventDefault()
+          event.stopPropagation()
+          onDropOnTodo(todo.id)
+        }}
+        onDragLeave={(event) => {
+          if (!canAcceptDrop) {
+            return
+          }
+
+          const nextHoverTarget = event.relatedTarget
+          if (nextHoverTarget instanceof Node && event.currentTarget.contains(nextHoverTarget)) {
+            return
+          }
+
+          onDragOverTodo(null)
+        }}
+        onDragEnter={(event) => {
+          if (!canAcceptDrop) {
+            return
+          }
+
+          event.preventDefault()
+          event.stopPropagation()
+          onDragOverTodo(todo.id)
+        }}
+        aria-dropeffect={canAcceptDrop ? 'move' : undefined}
+        data-drop-target={isDropTarget ? 'true' : undefined}
       >
+        <button
+          className={`todo-drag-handle${isDraggingHandle ? ' is-dragging' : ''}`}
+          type="button"
+          draggable
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = 'move'
+            event.dataTransfer.setData('text/plain', String(todo.id))
+            setIsDraggingHandle(true)
+            onDragStart(todo.id)
+          }}
+          onDragEnd={() => {
+            setIsDraggingHandle(false)
+            onDragEnd()
+          }}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          disabled={isProcessing}
+          aria-label={t('todoItem.dragHandle')}
+          aria-grabbed={isDraggingHandle}
+          title={t('todoItem.dragHandle')}
+        >
+          ⋮⋮
+        </button>
         {hasChildren ? (
           <button
             className={`todo-collapse-toggle${isCollapsed ? '' : ' is-expanded'}`}
@@ -332,6 +423,12 @@ function TodoItem({
               onToggleCollapsed={onToggleCollapsed}
               onAddDependency={onAddDependency}
               onRemoveDependency={onRemoveDependency}
+              draggingTodoId={draggingTodoId}
+              activeDropTodoId={activeDropTodoId}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDragOverTodo={onDragOverTodo}
+              onDropOnTodo={onDropOnTodo}
               allTodos={allTodos}
               descendantMap={descendantMap}
               collapsedTodoIds={collapsedTodoIds}
@@ -347,3 +444,4 @@ function TodoItem({
 }
 
 export default TodoItem
+
