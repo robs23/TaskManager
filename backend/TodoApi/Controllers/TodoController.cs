@@ -22,6 +22,7 @@ public class TodoController : ControllerBase
         var todos = await _context.Todos.AsNoTracking()
             .Include(t => t.Children)
             .Include(t => t.Dependencies)
+            .Include(t => t.Tags)
             .ToListAsync();
         var response = todos.Select(ToResponse).ToList();
         return Ok(response);
@@ -33,6 +34,7 @@ public class TodoController : ControllerBase
         var todo = await _context.Todos.AsNoTracking()
             .Include(t => t.Children)
             .Include(t => t.Dependencies)
+            .Include(t => t.Tags)
             .FirstOrDefaultAsync(t => t.Id == id);
         if (todo is null)
         {
@@ -54,6 +56,7 @@ public class TodoController : ControllerBase
         public int? ParentId { get; set; }
         public bool Doable { get; set; }
         public List<TodoDependencyResponse> Dependencies { get; set; } = new();
+        public List<string> Tags { get; set; } = new();
     }
 
     public sealed class TodoDependencyResponse
@@ -105,6 +108,11 @@ public class TodoController : ControllerBase
         public string? Notes { get; set; }
         public int? ParentId { get; set; }
         public bool IsCompleted { get; set; }
+    }
+
+    public sealed class AddTagRequest
+    {
+        public string Name { get; set; } = string.Empty;
     }
 
     [HttpPut("{id:int}")]
@@ -195,6 +203,78 @@ public class TodoController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("{id:int}/tags")]
+    public async Task<ActionResult<TodoResponse>> AddTag(int id, [FromBody] AddTagRequest request)
+    {
+        var normalizedTagName = NormalizeTagName(request?.Name);
+        if (normalizedTagName is null)
+        {
+            return BadRequest("Tag name is required.");
+        }
+
+        var todo = await _context.Todos
+            .Include(t => t.Dependencies)
+            .Include(t => t.Tags)
+            .FirstOrDefaultAsync(t => t.Id == id);
+        if (todo is null)
+        {
+            return NotFound();
+        }
+
+        var tag = await _context.Tags.FirstOrDefaultAsync(t => t.Name == normalizedTagName);
+        var createdTag = false;
+        if (tag is null)
+        {
+            tag = new Tag { Name = normalizedTagName };
+            _context.Tags.Add(tag);
+            createdTag = true;
+        }
+
+        if (!todo.Tags.Any(existingTag => existingTag.Name == normalizedTagName))
+        {
+            todo.Tags.Add(tag);
+        }
+
+        await _context.SaveChangesAsync();
+        var response = ToResponse(todo);
+        if (createdTag)
+        {
+            return CreatedAtAction(nameof(GetTodo), new { id = todo.Id }, response);
+        }
+
+        return Ok(response);
+    }
+
+    [HttpDelete("{id:int}/tags/{tagName}")]
+    public async Task<ActionResult<TodoResponse>> RemoveTag(int id, string tagName)
+    {
+        var normalizedTagName = NormalizeTagName(tagName);
+        if (normalizedTagName is null)
+        {
+            return BadRequest("Tag name is required.");
+        }
+
+        var todo = await _context.Todos
+            .Include(t => t.Dependencies)
+            .Include(t => t.Tags)
+            .FirstOrDefaultAsync(t => t.Id == id);
+        if (todo is null)
+        {
+            return NotFound();
+        }
+
+        var tag = todo.Tags.FirstOrDefault(existingTag => existingTag.Name == normalizedTagName);
+        if (tag is null)
+        {
+            return NotFound();
+        }
+
+        todo.Tags.Remove(tag);
+        await _context.SaveChangesAsync();
+
+        return Ok(ToResponse(todo));
+    }
+
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteTodo(int id)
     {
@@ -229,6 +309,10 @@ public class TodoController : ControllerBase
                     Name = dependency.Name,
                     IsCompleted = dependency.IsCompleted
                 })
+                .ToList(),
+            Tags = todo.Tags
+                .Select(tag => tag.Name)
+                .OrderBy(tagName => tagName)
                 .ToList()
         };
     }
@@ -236,5 +320,10 @@ public class TodoController : ControllerBase
     private static string? NormalizeNullableText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string? NormalizeTagName(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
     }
 }

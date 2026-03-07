@@ -9,6 +9,7 @@ interface TodoListProps {
   onToggle: (todo: Todo) => Promise<void>
   onDelete: (todo: Todo) => Promise<void>
   onEdit: (todo: Todo, nextParentId: number | null) => Promise<void>
+  onStartEdit: (todo: Todo) => void
   onAddSubtask: (todoId: number) => void
   onAddDependency: (todo: Todo, dependsOnId: number) => Promise<void>
   onRemoveDependency: (todo: Todo, dependsOnId: number) => Promise<void>
@@ -22,6 +23,7 @@ function TodoList({
   onToggle,
   onDelete,
   onEdit,
+  onStartEdit,
   onAddSubtask,
   onAddDependency,
   onRemoveDependency,
@@ -38,11 +40,12 @@ function TodoList({
         <TodoItem
           key={todo.id}
           todo={todo}
-          onToggle={onToggle}
-          onDelete={onDelete}
-          onEdit={onEdit}
-          onAddSubtask={onAddSubtask}
-          onAddDependency={onAddDependency}
+            onToggle={onToggle}
+            onDelete={onDelete}
+            onEdit={onEdit}
+            onStartEdit={onStartEdit}
+            onAddSubtask={onAddSubtask}
+            onAddDependency={onAddDependency}
           onRemoveDependency={onRemoveDependency}
           allTodos={allTodos}
           descendantMap={descendantMap}

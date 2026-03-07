@@ -13,20 +13,26 @@
   "buttons": {
     "add": "Dodaj",
     "adding": "Dodawanie...",
+    "save": "Zapisz",
+    "saving": "Zapisywanie...",
     "create": "Utwórz",
     "cancel": "Anuluj",
     "edit": "Edytuj",
+    "details": "Szczegóły",
     "delete": "Usuń",
     "remove": "Usuń",
     "addSubtask": "Dodaj podzadanie"
   },
   "form": {
     "newTask": "Nowe zadanie",
+    "editTask": "Edytuj zadanie",
     "taskName": "Nazwa zadania",
     "description": "Opis",
     "deadline": "Termin",
     "notes": "Notatki",
     "parentTask": "Zadanie nadrzędne",
+    "tags": "Tagi",
+    "tagsPlaceholder": "Dodaj tag",
     "noParentTopLevel": "Brak nadrzędnego (poziom główny)",
     "descriptionOptional": "Opis (opcjonalnie)",
     "notesOptional": "Notatki (opcjonalnie)",
@@ -48,7 +54,8 @@
   },
   "todoItem": {
     "markAsComplete": "Oznacz jako ukończone",
-    "markAsIncomplete": "Oznacz jako nieukończone"
+    "markAsIncomplete": "Oznacz jako nieukończone",
+    "due": "Termin"
   },
   "errors": {
     "fetchTodos": "Nie udało się pobrać zadań.",
@@ -61,7 +68,12 @@
     "addDependencyMessage": "Nie można dodać zależności. Spróbuj ponownie.",
     "removeDependency": "Nie udało się usunąć zależności.",
     "removeDependencyMessage": "Nie można usunąć zależności. Spróbuj ponownie.",
+    "syncTags": "Nie można zsynchronizować tagów. Spróbuj ponownie.",
     "deleteTodo": "Nie udało się usunąć zadania.",
     "deleteTodoMessage": "Nie można usunąć zadania. Spróbuj ponownie."
+  },
+  "modal": {
+    "createTodo": "Utwórz zadanie",
+    "editTodo": "Edytuj zadanie"
   }
 }

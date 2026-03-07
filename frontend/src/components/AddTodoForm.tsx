@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import TagInput from './TagInput'
 
 export interface TodoDraft {
   name: string
@@ -8,6 +9,7 @@ export interface TodoDraft {
   deadline: string
   notes: string
   parentId: number | null
+  tags: string[]
 }
 
 export interface ParentOption {
@@ -16,12 +18,14 @@ export interface ParentOption {
 }
 
 export interface AddTodoFormProps {
-  onAdd: (todoDraft: TodoDraft) => Promise<boolean>
+  onSubmit: (todoDraft: TodoDraft) => Promise<boolean>
   isSubmitting: boolean
   parentOptions: ParentOption[]
   parentId: number | null
   onParentChange: (parentId: number | null) => void
   onCancel?: () => void
+  isEditMode?: boolean
+  initialDraft?: Partial<Omit<TodoDraft, 'parentId'>>
 }
 
 const parseParentId = (value: string): number | null => {
@@ -34,19 +38,31 @@ const parseParentId = (value: string): number | null => {
 }
 
 function AddTodoForm({
-  onAdd,
+  onSubmit,
   isSubmitting,
   parentOptions,
   parentId,
   onParentChange,
   onCancel,
+  isEditMode = false,
+  initialDraft,
 }: AddTodoFormProps) {
   const { t } = useTranslation()
-  const [name, setName] = useState<string>('')
-  const [description, setDescription] = useState<string>('')
-  const [deadline, setDeadline] = useState<string>('')
-  const [notes, setNotes] = useState<string>('')
+  const [name, setName] = useState<string>(initialDraft?.name ?? '')
+  const [description, setDescription] = useState<string>(initialDraft?.description ?? '')
+  const [deadline, setDeadline] = useState<string>(initialDraft?.deadline ?? '')
+  const [notes, setNotes] = useState<string>(initialDraft?.notes ?? '')
+  const [tags, setTags] = useState<string[]>(initialDraft?.tags ?? [])
   const [formError, setFormError] = useState<string>('')
+
+  useEffect(() => {
+    setName(initialDraft?.name ?? '')
+    setDescription(initialDraft?.description ?? '')
+    setDeadline(initialDraft?.deadline ?? '')
+    setNotes(initialDraft?.notes ?? '')
+    setTags(initialDraft?.tags ?? [])
+    setFormError('')
+  }, [initialDraft, isEditMode])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
@@ -58,26 +74,28 @@ function AddTodoForm({
     }
 
     setFormError('')
-    const didCreate = await onAdd({
+    const didSave = await onSubmit({
       name: trimmed,
       description,
       deadline,
       notes,
       parentId,
+      tags,
     })
 
-    if (didCreate) {
+    if (didSave) {
       setName('')
       setDescription('')
       setDeadline('')
       setNotes('')
+      setTags([])
     }
   }
 
   return (
     <form className="todo-form" onSubmit={handleSubmit}>
       <label className="todo-label" htmlFor="todo-name">
-        {t('form.newTask')}
+        {isEditMode ? t('form.editTask') : t('form.newTask')}
       </label>
       <div className="todo-controls">
         <div className="todo-field">
@@ -157,10 +175,28 @@ function AddTodoForm({
             disabled={isSubmitting}
           />
         </div>
+        <div className="todo-field">
+          <label className="todo-field-label" htmlFor="todo-tags">
+            {t('form.tags')}
+          </label>
+          <TagInput
+            id="todo-tags"
+            value={tags}
+            onChange={setTags}
+            placeholder={t('form.tagsPlaceholder')}
+            disabled={isSubmitting}
+          />
+        </div>
       </div>
       <div className="todo-controls">
         <button className="primary-button" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? t('buttons.adding') : t('buttons.add')}
+          {isSubmitting
+            ? isEditMode
+              ? t('buttons.saving')
+              : t('buttons.adding')
+            : isEditMode
+              ? t('buttons.save')
+              : t('buttons.add')}
         </button>
         {onCancel ? (
           <button className="secondary-button" type="button" onClick={onCancel} disabled={isSubmitting}>

@@ -13,20 +13,26 @@
   "buttons": {
     "add": "Add",
     "adding": "Adding...",
+    "save": "Save",
+    "saving": "Saving...",
     "create": "Create",
     "cancel": "Cancel",
     "edit": "Edit",
+    "details": "Details",
     "delete": "Delete",
     "remove": "Remove",
     "addSubtask": "Add subtask"
   },
   "form": {
     "newTask": "New task",
+    "editTask": "Edit task",
     "taskName": "Task name",
     "description": "Description",
     "deadline": "Deadline",
     "notes": "Notes",
     "parentTask": "Parent task",
+    "tags": "Tags",
+    "tagsPlaceholder": "Add tag",
     "noParentTopLevel": "No parent (top-level)",
     "descriptionOptional": "Description (optional)",
     "notesOptional": "Notes (optional)",
@@ -48,7 +54,8 @@
   },
   "todoItem": {
     "markAsComplete": "Mark as complete",
-    "markAsIncomplete": "Mark as incomplete"
+    "markAsIncomplete": "Mark as incomplete",
+    "due": "Due"
   },
   "errors": {
     "fetchTodos": "Failed to fetch todos.",
@@ -61,7 +68,12 @@
     "addDependencyMessage": "Unable to add dependency. Please try again.",
     "removeDependency": "Failed to remove dependency.",
     "removeDependencyMessage": "Unable to remove dependency. Please try again.",
+    "syncTags": "Unable to sync tags. Please try again.",
     "deleteTodo": "Failed to delete todo.",
     "deleteTodoMessage": "Unable to delete todo. Please try again."
+  },
+  "modal": {
+    "createTodo": "Create Todo",
+    "editTodo": "Edit Todo"
   }
 }

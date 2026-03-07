@@ -188,6 +188,157 @@ public class TodoControllerTests
     }
 
     [Fact]
+    public async Task GetTodo_IncludesTagsInResponse()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var tag = new Tag { Name = "urgent" };
+        todo.Tags.Add(tag);
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        var controller = new TodoController(context);
+
+        var result = await controller.GetTodo(todo.Id);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var fetched = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
+        Assert.Equal(new[] { "urgent" }, fetched.Tags);
+    }
+
+    [Fact]
+    public async Task AddTag_CreatesTag_NormalizesName_AndReturnsCreated()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = new TodoController(context);
+
+        var result = await controller.AddTag(todo.Id, new TodoController.AddTagRequest { Name = "  UrGent  " });
+
+        var createdResult = Assert.IsType<CreatedAtActionResult>(result.Result);
+        var updatedTodo = Assert.IsType<TodoController.TodoResponse>(createdResult.Value);
+        Assert.Equal(new[] { "urgent" }, updatedTodo.Tags);
+
+        var savedTag = await context.Tags.SingleAsync();
+        Assert.Equal("urgent", savedTag.Name);
+    }
+
+    [Fact]
+    public async Task AddTag_UsesExistingTagAndReturnsOk()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var sharedTag = new Tag { Name = "home" };
+        var existingTodo = new Todo { Name = "Existing", CreatedAt = DateTime.UtcNow };
+        existingTodo.Tags.Add(sharedTag);
+        var targetTodo = new Todo { Name = "Target", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(existingTodo, targetTodo);
+        await context.SaveChangesAsync();
+        var controller = new TodoController(context);
+
+        var result = await controller.AddTag(targetTodo.Id, new TodoController.AddTagRequest { Name = "HOME" });
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var updatedTodo = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
+        Assert.Equal(new[] { "home" }, updatedTodo.Tags);
+        Assert.Equal(1, await context.Tags.CountAsync());
+    }
+
+    [Fact]
+    public async Task AddTag_ReturnsBadRequestForMissingTagName()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = new TodoController(context);
+
+        var result = await controller.AddTag(todo.Id, new TodoController.AddTagRequest { Name = " " });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task AddTag_ReturnsNotFoundForMissingTodo()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var controller = new TodoController(context);
+
+        var result = await controller.AddTag(999, new TodoController.AddTagRequest { Name = "home" });
+
+        Assert.IsType<NotFoundResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task RemoveTag_RemovesTagFromTodoAndReturnsUpdatedTodo()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var tag = new Tag { Name = "home" };
+        todo.Tags.Add(tag);
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = new TodoController(context);
+
+        var result = await controller.RemoveTag(todo.Id, "HOME");
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var updatedTodo = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
+        Assert.Empty(updatedTodo.Tags);
+
+        var reloadedTodo = await context.Todos
+            .Include(item => item.Tags)
+            .FirstAsync(item => item.Id == todo.Id);
+        Assert.Empty(reloadedTodo.Tags);
+    }
+
+    [Fact]
+    public async Task RemoveTag_ReturnsNotFoundForMissingTag()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = new TodoController(context);
+
+        var result = await controller.RemoveTag(todo.Id, "missing");
+
+        Assert.IsType<NotFoundResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task GetTags_ReturnsUniqueTagsOrderedByName()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var firstTodo = new Todo { Name = "First", CreatedAt = DateTime.UtcNow };
+        var secondTodo = new Todo { Name = "Second", CreatedAt = DateTime.UtcNow };
+        var alpha = new Tag { Name = "alpha" };
+        var beta = new Tag { Name = "beta" };
+        firstTodo.Tags.Add(beta);
+        secondTodo.Tags.Add(alpha);
+        secondTodo.Tags.Add(beta);
+        context.Todos.AddRange(firstTodo, secondTodo);
+        await context.SaveChangesAsync();
+
+        var controller = new TagsController(context);
+
+        var result = await controller.GetTags();
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var tags = Assert.IsAssignableFrom<IEnumerable<string>>(okResult.Value).ToList();
+        Assert.Equal(new[] { "alpha", "beta" }, tags);
+    }
+
+    [Fact]
     public async Task AddDependency_AddsDependency()
     {
         var databaseName = Guid.NewGuid().ToString();

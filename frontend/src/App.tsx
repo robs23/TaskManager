@@ -4,6 +4,7 @@ import './App.css'
 import AddTodoForm from './components/AddTodoForm'
 import type { ParentOption, TodoDraft } from './components/AddTodoForm'
 import Header from './components/Header'
+import Modal from './components/Modal'
 import TodoList from './components/TodoList'
 
 const API_BASE = '/api/todos'
@@ -20,6 +21,7 @@ interface TodoApiResponse {
   description: string | null
   deadline: string | null
   notes: string | null
+  tags?: string[]
   isCompleted: boolean
   createdAt: string
   parentId: number | null
@@ -30,6 +32,7 @@ interface TodoApiResponse {
 interface Todo extends Omit<TodoApiResponse, 'dependencies'> {
   doable: boolean
   dependencies: TodoDependencySummary[]
+  tags: string[]
   children: Todo[]
 }
 
@@ -48,6 +51,20 @@ interface UpdateTodoPayload extends CreateTodoPayload {
 const normalizeText = (value: string): string | null => {
   const trimmed = value.trim()
   return trimmed ? trimmed : null
+}
+
+const normalizeTag = (value: string): string => value.trim().toLowerCase()
+
+const normalizeTagList = (tags: string[]): string[] => {
+  const deduped = new Set<string>()
+  tags.forEach((tag) => {
+    const normalized = normalizeTag(tag)
+    if (normalized) {
+      deduped.add(normalized)
+    }
+  })
+
+  return [...deduped]
 }
 
 const deriveDoable = (dependencies: TodoDependencySummary[]): boolean => {
@@ -72,10 +89,17 @@ const hydrateTodo = (todo: TodoApiResponse): Todo => {
         isCompleted: Boolean(dependency.isCompleted),
       }))
     : []
+  const tags = Array.isArray(todo.tags)
+    ? todo.tags
+        .filter((tag): tag is string => typeof tag === 'string')
+        .map((tag) => normalizeTag(tag))
+        .filter((tag) => tag.length > 0)
+    : []
 
   return {
     ...todo,
     dependencies,
+    tags,
     doable: deriveDoable(dependencies),
     children: [],
   }
@@ -141,6 +165,7 @@ function App() {
   const [error, setError] = useState<string>('')
   const [selectedParentId, setSelectedParentId] = useState<number | null>(null)
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false)
+  const [editingTodoId, setEditingTodoId] = useState<number | null>(null)
 
   const loadTodos = async (): Promise<void> => {
     setIsLoading(true)
@@ -168,6 +193,10 @@ function App() {
   }, [])
 
   const { roots, descendantMap } = useMemo(() => buildTodoHierarchy(todos), [todos])
+  const editingTodo = useMemo(
+    () => (editingTodoId === null ? null : todos.find((todo) => todo.id === editingTodoId) ?? null),
+    [editingTodoId, todos],
+  )
   const parentOptions = useMemo<ParentOption[]>(
     () => todos.map((todo) => ({ id: todo.id, name: todo.name })),
     [todos],
@@ -183,7 +212,52 @@ function App() {
     })
   }
 
-  const handleAdd = async (todoDraft: TodoDraft): Promise<boolean> => {
+  const syncTodoTags = async (
+    todoId: number,
+    existingTags: string[],
+    requestedTags: string[],
+  ): Promise<void> => {
+    const currentSet = new Set(normalizeTagList(existingTags))
+    const requestedSet = new Set(normalizeTagList(requestedTags))
+    const tagsToAdd = [...requestedSet].filter((tag) => !currentSet.has(tag))
+    const tagsToRemove = [...currentSet].filter((tag) => !requestedSet.has(tag))
+
+    if (tagsToAdd.length > 0) {
+      const addResponses = await Promise.all(
+        tagsToAdd.map((tag) =>
+          fetch(`${API_BASE}/${todoId}/tags`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name: tag }),
+          }),
+        ),
+      )
+
+      const failedAdd = addResponses.find((response) => !response.ok)
+      if (failedAdd) {
+        throw new Error(t('errors.syncTags'))
+      }
+    }
+
+    if (tagsToRemove.length > 0) {
+      const removeResponses = await Promise.all(
+        tagsToRemove.map((tag) =>
+          fetch(`${API_BASE}/${todoId}/tags/${encodeURIComponent(tag)}`, {
+            method: 'DELETE',
+          }),
+        ),
+      )
+
+      const failedRemove = removeResponses.find((response) => !response.ok)
+      if (failedRemove) {
+        throw new Error(t('errors.syncTags'))
+      }
+    }
+  }
+
+  const handleCreate = async (todoDraft: TodoDraft): Promise<boolean> => {
     setIsSubmitting(true)
     setError('')
 
@@ -209,10 +283,11 @@ function App() {
       }
 
       const created = (await response.json()) as TodoApiResponse
-      const hydrated = hydrateTodo(created)
-      setTodos((prev) => [hydrated, ...prev])
+      await syncTodoTags(created.id, created.tags ?? [], todoDraft.tags)
+      setEditingTodoId(null)
       setShowCreateForm(false)
       setSelectedParentId(null)
+      await loadTodos()
       return true
     } catch (createError) {
       console.error(createError)
@@ -221,6 +296,65 @@ function App() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const handleUpdate = async (todoDraft: TodoDraft): Promise<boolean> => {
+    if (editingTodoId === null) {
+      return false
+    }
+
+    const targetTodo = todos.find((todo) => todo.id === editingTodoId)
+    if (!targetTodo) {
+      setError(t('errors.updateTodoMessage'))
+      return false
+    }
+
+    setIsSubmitting(true)
+    setError('')
+
+    try {
+      const payload: UpdateTodoPayload = {
+        name: todoDraft.name.trim(),
+        description: normalizeText(todoDraft.description),
+        deadline: todoDraft.deadline ? todoDraft.deadline : null,
+        notes: normalizeText(todoDraft.notes),
+        parentId: todoDraft.parentId ?? null,
+        isCompleted: targetTodo.isCompleted,
+      }
+
+      const response = await fetch(`${API_BASE}/${targetTodo.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        throw new Error(t('errors.updateTodo'))
+      }
+
+      await syncTodoTags(targetTodo.id, targetTodo.tags, todoDraft.tags)
+      setEditingTodoId(null)
+      setShowCreateForm(false)
+      setSelectedParentId(null)
+      await loadTodos()
+      return true
+    } catch (updateError) {
+      console.error(updateError)
+      setError(t('errors.updateTodoMessage'))
+      return false
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleSubmitTodo = async (todoDraft: TodoDraft): Promise<boolean> => {
+    if (editingTodoId !== null) {
+      return handleUpdate(todoDraft)
+    }
+
+    return handleCreate(todoDraft)
   }
 
   const createUpdatePayload = (
@@ -417,19 +551,35 @@ function App() {
   }
 
   const handleAddSubtask = (todoId: number): void => {
+    setEditingTodoId(null)
     setSelectedParentId(todoId)
+    setShowCreateForm(true)
+  }
+
+  const handleStartEdit = (todo: Todo): void => {
+    setEditingTodoId(todo.id)
+    setSelectedParentId(todo.parentId ?? null)
     setShowCreateForm(true)
   }
 
   const handleToggleCreateForm = (): void => {
     setShowCreateForm((previous) => {
-      const next = !previous
-      if (!next) {
+      if (previous) {
         setSelectedParentId(null)
+        setEditingTodoId(null)
+      } else {
+        setSelectedParentId(null)
+        setEditingTodoId(null)
       }
 
-      return next
+      return !previous
     })
+  }
+
+  const handleCloseCreateForm = (): void => {
+    setShowCreateForm(false)
+    setSelectedParentId(null)
+    setEditingTodoId(null)
   }
 
   const handleDelete = async (todo: Todo): Promise<void> => {
@@ -470,18 +620,32 @@ function App() {
           </div>
         ) : null}
 
-        {showCreateForm ? (
-          <section className="todo-form-container" aria-label={t('buttons.create')}>
-            <AddTodoForm
-              onAdd={handleAdd}
-              isSubmitting={isSubmitting}
-              parentOptions={parentOptions}
-              parentId={selectedParentId}
-              onParentChange={setSelectedParentId}
-              onCancel={handleToggleCreateForm}
-            />
-          </section>
-        ) : null}
+        <Modal
+          isOpen={showCreateForm}
+          title={editingTodo ? t('modal.editTodo') : t('modal.createTodo')}
+          onClose={handleCloseCreateForm}
+        >
+          <AddTodoForm
+            onSubmit={handleSubmitTodo}
+            isSubmitting={isSubmitting}
+            parentOptions={parentOptions}
+            parentId={selectedParentId}
+            onParentChange={setSelectedParentId}
+            onCancel={handleCloseCreateForm}
+            isEditMode={Boolean(editingTodo)}
+            initialDraft={
+              editingTodo
+                ? {
+                    name: editingTodo.name,
+                    description: editingTodo.description ?? '',
+                    deadline: editingTodo.deadline ?? '',
+                    notes: editingTodo.notes ?? '',
+                    tags: editingTodo.tags,
+                  }
+                : undefined
+            }
+          />
+        </Modal>
 
         {isLoading ? (
           <p className="loading">{t('app.loading')}</p>
@@ -493,6 +657,7 @@ function App() {
             onToggle={handleToggle}
             onDelete={handleDelete}
             onEdit={handleReparent}
+            onStartEdit={handleStartEdit}
             onAddSubtask={handleAddSubtask}
             onAddDependency={handleAddDependency}
             onRemoveDependency={handleRemoveDependency}

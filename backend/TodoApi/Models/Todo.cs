@@ -16,6 +16,7 @@ public class Todo
     public ICollection<Todo> Children { get; set; } = new List<Todo>();
     public ICollection<Todo> Dependencies { get; set; } = new List<Todo>();
     public ICollection<Todo> DependentTodos { get; set; } = new List<Todo>();
+    public ICollection<Tag> Tags { get; set; } = new List<Tag>();
 
     [NotMapped]
     public bool Doable => Dependencies?.All(dependency => dependency.IsCompleted) ?? true;

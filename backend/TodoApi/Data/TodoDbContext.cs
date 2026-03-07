@@ -11,6 +11,7 @@ public class TodoDbContext : DbContext
     }
 
     public DbSet<Todo> Todos => Set<Todo>();
+    public DbSet<Tag> Tags => Set<Tag>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,6 +40,28 @@ public class TodoDbContext : DbContext
                     join.ToTable(tableBuilder =>
                         tableBuilder.HasCheckConstraint("CK_TodoDependencies_NoSelf", "TodoId <> DependsOnTodoId"));
                 });
+
+        modelBuilder.Entity<Todo>()
+            .HasMany(t => t.Tags)
+            .WithMany(t => t.TodoItems)
+            .UsingEntity<Dictionary<string, object>>(
+                "TodoItemTag",
+                right => right.HasOne<Tag>()
+                    .WithMany()
+                    .HasForeignKey("TagId")
+                    .OnDelete(DeleteBehavior.Cascade),
+                left => left.HasOne<Todo>()
+                    .WithMany()
+                    .HasForeignKey("TodoItemId")
+                    .OnDelete(DeleteBehavior.Cascade),
+                join =>
+                {
+                    join.HasKey("TodoItemId", "TagId");
+                });
+
+        modelBuilder.Entity<Tag>()
+            .HasIndex(t => t.Name)
+            .IsUnique();
 
         base.OnModelCreating(modelBuilder);
     }

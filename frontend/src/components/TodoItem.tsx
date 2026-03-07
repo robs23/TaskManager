@@ -28,6 +28,7 @@ export interface TodoItemProps {
   onToggle: (todo: Todo) => Promise<void>
   onDelete: (todo: Todo) => Promise<void>
   onEdit: (todo: Todo, nextParentId: number | null) => Promise<void>
+  onStartEdit: (todo: Todo) => void
   onAddSubtask: (todoId: number) => void
   onAddDependency: (todo: Todo, dependsOnId: number) => Promise<void>
   onRemoveDependency: (todo: Todo, dependsOnId: number) => Promise<void>
@@ -50,6 +51,7 @@ function TodoItem({
   onToggle,
   onDelete,
   onEdit,
+  onStartEdit,
   onAddSubtask,
   onAddDependency,
   onRemoveDependency,
@@ -59,7 +61,7 @@ function TodoItem({
   processingIds,
   depth,
 }: TodoItemProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [selectedDependencyId, setSelectedDependencyId] = useState<string>('')
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
   const invalidParents = descendantMap.get(todo.id) ?? new Set<number>()
@@ -73,13 +75,29 @@ function TodoItem({
   )
   const isBlocked = !todo.doable && !todo.isCompleted
   const isToggleLocked = isProcessing || isBlocked
+  const deadlineDate = todo.deadline
+    ? /^\d{4}-\d{2}-\d{2}$/.test(todo.deadline)
+      ? new Date(
+          Number(todo.deadline.slice(0, 4)),
+          Number(todo.deadline.slice(5, 7)) - 1,
+          Number(todo.deadline.slice(8, 10)),
+        )
+      : new Date(todo.deadline)
+    : null
+  const formattedDeadline =
+    deadlineDate && !Number.isNaN(deadlineDate.getTime())
+      ? new Intl.DateTimeFormat(i18n.resolvedLanguage ?? i18n.language, {
+          dateStyle: 'medium',
+        }).format(deadlineDate)
+      : null
+  const deadlineLabel = t('todoItem.due')
 
   return (
     <li className="todo-node">
       <div
         className={`todo-item${todo.isCompleted ? ' is-completed' : ''}${
           depth > 0 ? ' todo-item--subtask' : ''
-        }`}
+        }${formattedDeadline ? ' todo-item--with-deadline' : ''}`}
       >
         <button
           className={`todo-toggle${todo.isCompleted ? ' is-completed' : ''}`}
@@ -94,24 +112,41 @@ function TodoItem({
         >
           {todo.isCompleted ? '✓' : ''}
         </button>
-        <div className="todo-content">
-          <span className="todo-title" title={todo.name}>
-            {todo.name}
-          </span>
+        <div className={`todo-content${formattedDeadline ? ' todo-content--with-deadline' : ''}`}>
+          <div className="todo-text">
+            <span className="todo-title" title={todo.name}>
+              {todo.name}
+            </span>
+            {formattedDeadline ? (
+              <span className="todo-deadline" title={`${deadlineLabel}: ${formattedDeadline}`}>
+                {deadlineLabel}: {formattedDeadline}
+              </span>
+            ) : null}
+          </div>
           <span className={`todo-badge${todo.doable ? ' todo-badge--doable' : ' todo-badge--blocked'}`}>
             {todo.doable ? t('common.doable') : t('common.blocked')}
           </span>
         </div>
         <div className="todo-actions">
           <button
-            className={`todo-compact-action${isExpanded ? ' is-active' : ''}`}
+            className="todo-compact-action"
             type="button"
-            onClick={() => setIsExpanded((previous) => !previous)}
+            onClick={() => onStartEdit(todo)}
             disabled={isProcessing}
             aria-label={t('buttons.edit')}
             title={t('buttons.edit')}
           >
             ✎
+          </button>
+          <button
+            className={`todo-compact-action${isExpanded ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => setIsExpanded((previous) => !previous)}
+            disabled={isProcessing}
+            aria-label={t('buttons.details')}
+            title={t('buttons.details')}
+          >
+            ⋯
           </button>
           <button
             className="todo-compact-action"
@@ -254,6 +289,7 @@ function TodoItem({
               onToggle={onToggle}
               onDelete={onDelete}
               onEdit={onEdit}
+              onStartEdit={onStartEdit}
               onAddSubtask={onAddSubtask}
               onAddDependency={onAddDependency}
               onRemoveDependency={onRemoveDependency}
