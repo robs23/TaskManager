@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TodoApi.Data;
 
@@ -10,46 +11,14 @@ using TodoApi.Data;
 namespace TodoApi.Migrations
 {
     [DbContext(typeof(TodoDbContext))]
-    partial class TodoDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260310194137_AddUserEntity")]
+    partial class AddUserEntity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.3");
-
-            modelBuilder.Entity("TodoApi.Models.FileAttachment", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("FileSize")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("StoragePath")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("TodoId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("UploadedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TodoId");
-
-                    b.ToTable("FileAttachments");
-                });
 
             modelBuilder.Entity("TodoApi.Models.Tag", b =>
                 {
@@ -98,14 +67,9 @@ namespace TodoApi.Migrations
                     b.Property<int?>("ParentId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ParentId");
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("Todos");
                 });
@@ -169,17 +133,6 @@ namespace TodoApi.Migrations
                     b.ToTable("TodoItemTag");
                 });
 
-            modelBuilder.Entity("TodoApi.Models.FileAttachment", b =>
-                {
-                    b.HasOne("TodoApi.Models.Todo", "Todo")
-                        .WithMany("Attachments")
-                        .HasForeignKey("TodoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Todo");
-                });
-
             modelBuilder.Entity("TodoApi.Models.Todo", b =>
                 {
                     b.HasOne("TodoApi.Models.Todo", "Parent")
@@ -187,15 +140,7 @@ namespace TodoApi.Migrations
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("TodoApi.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.Navigation("Parent");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("TodoDependencies", b =>
@@ -230,8 +175,6 @@ namespace TodoApi.Migrations
 
             modelBuilder.Entity("TodoApi.Models.Todo", b =>
                 {
-                    b.Navigation("Attachments");
-
                     b.Navigation("Children");
                 });
 #pragma warning restore 612, 618

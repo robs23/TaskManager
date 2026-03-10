@@ -1,28 +1,50 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using TodoApi.Data;
 using TodoApi.Models;
+using TodoApi.Services;
 
 namespace TodoApi.Controllers;
 
 [ApiController]
 [Route("api/todos")]
+[Authorize]
 public class TodoController : ControllerBase
 {
-    private readonly TodoDbContext _context;
+    private const long MaxAttachmentFileSizeBytes = 10 * 1024 * 1024;
+    private static readonly HashSet<string> BlockedAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".exe",
+        ".dll",
+        ".bat",
+        ".sh"
+    };
 
-    public TodoController(TodoDbContext context)
+    private readonly TodoDbContext _context;
+    private readonly IFileStorageService _fileStorageService;
+
+    public TodoController(TodoDbContext context, IFileStorageService fileStorageService)
     {
         _context = context;
+        _fileStorageService = fileStorageService;
     }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<TodoResponse>>> GetTodos()
     {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
         var todos = await _context.Todos.AsNoTracking()
+            .Where(t => t.UserId == userId)
             .Include(t => t.Children)
             .Include(t => t.Dependencies)
             .Include(t => t.Tags)
+            .Include(t => t.Attachments)
             .ToListAsync();
         var response = todos.Select(ToResponse).ToList();
         return Ok(response);
@@ -31,11 +53,17 @@ public class TodoController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<TodoResponse>> GetTodo(int id)
     {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
         var todo = await _context.Todos.AsNoTracking()
             .Include(t => t.Children)
             .Include(t => t.Dependencies)
             .Include(t => t.Tags)
-            .FirstOrDefaultAsync(t => t.Id == id);
+            .Include(t => t.Attachments)
+            .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
         if (todo is null)
         {
             return NotFound();
@@ -57,6 +85,7 @@ public class TodoController : ControllerBase
         public bool Doable { get; set; }
         public List<TodoDependencyResponse> Dependencies { get; set; } = new();
         public List<string> Tags { get; set; } = new();
+        public List<AttachmentResponse> Attachments { get; set; } = new();
     }
 
     public sealed class TodoDependencyResponse
@@ -64,6 +93,25 @@ public class TodoController : ControllerBase
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
         public bool IsCompleted { get; set; }
+    }
+
+    public sealed class AttachmentResponse
+    {
+        public int Id { get; set; }
+        public string FileName { get; set; } = string.Empty;
+        public long FileSize { get; set; }
+        public DateTime UploadedAt { get; set; }
+        public string ContentType { get; set; } = string.Empty;
+    }
+
+    public sealed class FileAttachmentResponse
+    {
+        public int Id { get; set; }
+        public int TodoId { get; set; }
+        public string FileName { get; set; } = string.Empty;
+        public long FileSize { get; set; }
+        public DateTime UploadedAt { get; set; }
+        public string ContentType { get; set; } = string.Empty;
     }
 
     public sealed class CreateTodoRequest
@@ -78,13 +126,29 @@ public class TodoController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<TodoResponse>> CreateTodo([FromBody] CreateTodoRequest request)
     {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
         if (request is null || string.IsNullOrWhiteSpace(request.Name))
         {
             return BadRequest("Name is required.");
         }
 
+        if (request.ParentId.HasValue)
+        {
+            var parentExists = await _context.Todos
+                .AnyAsync(t => t.Id == request.ParentId.Value && t.UserId == userId);
+            if (!parentExists)
+            {
+                return BadRequest("Parent todo does not exist.");
+            }
+        }
+
         var todo = new Todo
         {
+            UserId = userId,
             Name = request.Name.Trim(),
             Description = NormalizeNullableText(request.Description),
             Deadline = request.Deadline,
@@ -115,9 +179,139 @@ public class TodoController : ControllerBase
         public string Name { get; set; } = string.Empty;
     }
 
+    [HttpPost("{todoId:int}/attachments")]
+    public async Task<ActionResult<FileAttachmentResponse>> UploadAttachment(
+        int todoId,
+        [FromForm] IFormFile? file,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var todoExists = await _context.Todos
+            .AnyAsync(t => t.Id == todoId && t.UserId == userId, cancellationToken);
+        if (!todoExists)
+        {
+            return NotFound();
+        }
+
+        if (file is null || file.Length <= 0)
+        {
+            return BadRequest("A file is required.");
+        }
+
+        if (file.Length > MaxAttachmentFileSizeBytes)
+        {
+            return BadRequest("File size must not exceed 10 MB.");
+        }
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!string.IsNullOrEmpty(extension) && BlockedAttachmentExtensions.Contains(extension))
+        {
+            return BadRequest("File type is not allowed.");
+        }
+
+        await using var fileStream = file.OpenReadStream();
+        var relativePath = await _fileStorageService.UploadAsync(fileStream, file.FileName, cancellationToken);
+
+        var attachment = new FileAttachment
+        {
+            TodoId = todoId,
+            FileName = Path.GetFileName(file.FileName),
+            StoragePath = relativePath,
+            FileSize = file.Length,
+            UploadedAt = DateTime.UtcNow,
+            ContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType
+        };
+
+        _context.FileAttachments.Add(attachment);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return CreatedAtAction(nameof(GetTodo), new { id = todoId }, ToAttachmentResponse(attachment));
+    }
+
+    [HttpGet("{todoId:int}/attachments/{attachmentId:int}")]
+    public async Task<IActionResult> DownloadAttachment(int todoId, int attachmentId, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var todoExists = await _context.Todos
+            .AnyAsync(t => t.Id == todoId && t.UserId == userId, cancellationToken);
+        if (!todoExists)
+        {
+            return NotFound();
+        }
+
+        var attachment = await _context.FileAttachments.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == attachmentId && a.TodoId == todoId, cancellationToken);
+        if (attachment is null)
+        {
+            return NotFound();
+        }
+
+        var absolutePath = _fileStorageService.GetPath(attachment.StoragePath);
+        if (!System.IO.File.Exists(absolutePath))
+        {
+            return NotFound();
+        }
+
+        var contentType = string.IsNullOrWhiteSpace(attachment.ContentType)
+            ? "application/octet-stream"
+            : attachment.ContentType;
+
+        var stream = new FileStream(
+            absolutePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 64 * 1024,
+            options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+        return File(stream, contentType, attachment.FileName);
+    }
+
+    [HttpDelete("{todoId:int}/attachments/{attachmentId:int}")]
+    public async Task<IActionResult> DeleteAttachment(int todoId, int attachmentId, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var todoExists = await _context.Todos
+            .AnyAsync(t => t.Id == todoId && t.UserId == userId, cancellationToken);
+        if (!todoExists)
+        {
+            return NotFound();
+        }
+
+        var attachment = await _context.FileAttachments
+            .FirstOrDefaultAsync(a => a.Id == attachmentId && a.TodoId == todoId, cancellationToken);
+        if (attachment is null)
+        {
+            return NotFound();
+        }
+
+        _fileStorageService.Delete(attachment.StoragePath);
+        _context.FileAttachments.Remove(attachment);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return NoContent();
+    }
+
     [HttpPut("{id:int}")]
     public async Task<ActionResult<TodoResponse>> UpdateTodo(int id, [FromBody] UpdateTodoRequest request)
     {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
         if (request is null || string.IsNullOrWhiteSpace(request.Name))
         {
             return BadRequest("Name is required.");
@@ -126,7 +320,7 @@ public class TodoController : ControllerBase
         var todo = await _context.Todos
             .Include(t => t.Dependencies)
             .Include(t => t.Tags)
-            .FirstOrDefaultAsync(t => t.Id == id);
+            .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
         if (todo is null)
         {
             return NotFound();
@@ -139,13 +333,14 @@ public class TodoController : ControllerBase
                 return BadRequest("A todo cannot be its own parent.");
             }
 
-            var parentExists = await _context.Todos.AnyAsync(t => t.Id == request.ParentId.Value);
+            var parentExists = await _context.Todos
+                .AnyAsync(t => t.Id == request.ParentId.Value && t.UserId == userId);
             if (!parentExists)
             {
                 return BadRequest("Parent todo does not exist.");
             }
 
-            var createsCircularRelationship = await CreatesCircularParentRelationshipAsync(id, request.ParentId.Value);
+            var createsCircularRelationship = await CreatesCircularParentRelationshipAsync(id, request.ParentId.Value, userId);
             if (createsCircularRelationship)
             {
                 return BadRequest("Circular parent relationships are not allowed.");
@@ -166,6 +361,11 @@ public class TodoController : ControllerBase
     [HttpPost("{id:int}/dependencies/{dependsOnId:int}")]
     public async Task<IActionResult> AddDependency(int id, int dependsOnId)
     {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
         if (id == dependsOnId)
         {
             return BadRequest("A todo cannot depend on itself.");
@@ -173,7 +373,7 @@ public class TodoController : ControllerBase
 
         var todo = await _context.Todos
             .Include(t => t.Dependencies)
-            .FirstOrDefaultAsync(t => t.Id == id);
+            .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
         if (todo is null)
         {
             return NotFound();
@@ -181,7 +381,7 @@ public class TodoController : ControllerBase
 
         var dependsOnTodo = await _context.Todos
             .Include(t => t.Dependencies)
-            .FirstOrDefaultAsync(t => t.Id == dependsOnId);
+            .FirstOrDefaultAsync(t => t.Id == dependsOnId && t.UserId == userId);
         if (dependsOnTodo is null)
         {
             return NotFound();
@@ -204,15 +404,21 @@ public class TodoController : ControllerBase
     [HttpDelete("{id:int}/dependencies/{dependsOnId:int}")]
     public async Task<IActionResult> RemoveDependency(int id, int dependsOnId)
     {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
         var todo = await _context.Todos
             .Include(t => t.Dependencies)
-            .FirstOrDefaultAsync(t => t.Id == id);
+            .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
         if (todo is null)
         {
             return NotFound();
         }
 
-        var dependsOnTodo = await _context.Todos.FirstOrDefaultAsync(t => t.Id == dependsOnId);
+        var dependsOnTodo = await _context.Todos
+            .FirstOrDefaultAsync(t => t.Id == dependsOnId && t.UserId == userId);
         if (dependsOnTodo is null)
         {
             return NotFound();
@@ -229,6 +435,11 @@ public class TodoController : ControllerBase
     [HttpPost("{id:int}/tags")]
     public async Task<ActionResult<TodoResponse>> AddTag(int id, [FromBody] AddTagRequest request)
     {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
         var normalizedTagName = NormalizeTagName(request?.Name);
         if (normalizedTagName is null)
         {
@@ -238,7 +449,7 @@ public class TodoController : ControllerBase
         var todo = await _context.Todos
             .Include(t => t.Dependencies)
             .Include(t => t.Tags)
-            .FirstOrDefaultAsync(t => t.Id == id);
+            .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
         if (todo is null)
         {
             return NotFound();
@@ -271,6 +482,11 @@ public class TodoController : ControllerBase
     [HttpDelete("{id:int}/tags/{tagName}")]
     public async Task<ActionResult<TodoResponse>> RemoveTag(int id, string tagName)
     {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
         var normalizedTagName = NormalizeTagName(tagName);
         if (normalizedTagName is null)
         {
@@ -280,7 +496,7 @@ public class TodoController : ControllerBase
         var todo = await _context.Todos
             .Include(t => t.Dependencies)
             .Include(t => t.Tags)
-            .FirstOrDefaultAsync(t => t.Id == id);
+            .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
         if (todo is null)
         {
             return NotFound();
@@ -301,7 +517,12 @@ public class TodoController : ControllerBase
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteTodo(int id)
     {
-        var todo = await _context.Todos.FindAsync(id);
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var todo = await _context.Todos.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
         if (todo is null)
         {
             return NotFound();
@@ -336,7 +557,31 @@ public class TodoController : ControllerBase
             Tags = todo.Tags
                 .Select(tag => tag.Name)
                 .OrderBy(tagName => tagName)
+                .ToList(),
+            Attachments = todo.Attachments
+                .Select(attachment => new AttachmentResponse
+                {
+                    Id = attachment.Id,
+                    FileName = attachment.FileName,
+                    FileSize = attachment.FileSize,
+                    UploadedAt = attachment.UploadedAt,
+                    ContentType = attachment.ContentType
+                })
+                .OrderBy(attachment => attachment.UploadedAt)
                 .ToList()
+        };
+    }
+
+    private static FileAttachmentResponse ToAttachmentResponse(FileAttachment attachment)
+    {
+        return new FileAttachmentResponse
+        {
+            Id = attachment.Id,
+            TodoId = attachment.TodoId,
+            FileName = attachment.FileName,
+            FileSize = attachment.FileSize,
+            UploadedAt = attachment.UploadedAt,
+            ContentType = attachment.ContentType
         };
     }
 
@@ -350,7 +595,13 @@ public class TodoController : ControllerBase
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
     }
 
-    private async Task<bool> CreatesCircularParentRelationshipAsync(int todoId, int proposedParentId)
+    private bool TryGetCurrentUserId(out int userId)
+    {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return int.TryParse(userIdClaim, out userId);
+    }
+
+    private async Task<bool> CreatesCircularParentRelationshipAsync(int todoId, int proposedParentId, int userId)
     {
         var visited = new HashSet<int>();
         int? currentParentId = proposedParentId;
@@ -368,7 +619,7 @@ public class TodoController : ControllerBase
             }
 
             currentParentId = await _context.Todos
-                .Where(t => t.Id == currentParentId.Value)
+                .Where(t => t.Id == currentParentId.Value && t.UserId == userId)
                 .Select(t => t.ParentId)
                 .SingleOrDefaultAsync();
         }
@@ -376,3 +627,4 @@ public class TodoController : ControllerBase
         return false;
     }
 }
+

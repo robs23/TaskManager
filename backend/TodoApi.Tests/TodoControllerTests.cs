@@ -1,30 +1,56 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using TodoApi.Controllers;
 using TodoApi.Data;
 using TodoApi.Models;
+using TodoApi.Services;
 
 namespace TodoApi.Tests;
 
 public class TodoControllerTests
 {
+    private const int TestUserId = 1;
+
     [Fact]
     public async Task GetTodos_ReturnsAllTodos()
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
         context.Todos.AddRange(
-            new Todo { Name = "First", CreatedAt = DateTime.UtcNow },
-            new Todo { Name = "Second", CreatedAt = DateTime.UtcNow });
+            new Todo { UserId = TestUserId, Name = "First", CreatedAt = DateTime.UtcNow },
+            new Todo { UserId = TestUserId, Name = "Second", CreatedAt = DateTime.UtcNow });
         await context.SaveChangesAsync();
 
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.GetTodos();
 
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
-        var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoResponse>>(okResult.Value);
+        var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoResponse>>(okResult.Value).ToList();
         Assert.Equal(2, todos.Count());
+        Assert.All(todos, todo => Assert.Empty(todo.Attachments));
+    }
+
+    [Fact]
+    public async Task GetTodos_FiltersTodosByAuthenticatedUser()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        context.Todos.AddRange(
+            new Todo { UserId = TestUserId, Name = "Mine", CreatedAt = DateTime.UtcNow },
+            new Todo { UserId = 2, Name = "Other", CreatedAt = DateTime.UtcNow });
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.GetTodos();
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoResponse>>(okResult.Value).ToList();
+        Assert.Single(todos);
+        Assert.Equal("Mine", todos[0].Name);
     }
 
     [Fact]
@@ -32,11 +58,11 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Find me", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Find me", CreatedAt = DateTime.UtcNow };
         context.Todos.Add(todo);
         await context.SaveChangesAsync();
 
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.GetTodo(todo.Id);
 
@@ -51,7 +77,7 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.GetTodo(999);
 
@@ -63,10 +89,10 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var parent = new Todo { Name = "Parent", CreatedAt = DateTime.UtcNow };
+        var parent = new Todo { UserId = TestUserId, Name = "Parent", CreatedAt = DateTime.UtcNow };
         context.Todos.Add(parent);
         await context.SaveChangesAsync();
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
         var deadline = new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var request = new TodoController.CreateTodoRequest
         {
@@ -98,14 +124,54 @@ public class TodoControllerTests
     }
 
     [Fact]
+    public async Task CreateTodo_SetsUserIdFromAuthenticatedUser()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var controller = CreateAuthenticatedController(context, 7);
+
+        var result = await controller.CreateTodo(new TodoController.CreateTodoRequest
+        {
+            Name = "Owned by user 7"
+        });
+
+        var created = Assert.IsType<CreatedAtActionResult>(result.Result);
+        var response = Assert.IsType<TodoController.TodoResponse>(created.Value);
+        var saved = await context.Todos.FindAsync(response.Id);
+        Assert.NotNull(saved);
+        Assert.Equal(7, saved!.UserId);
+    }
+
+    [Fact]
+    public async Task CreateTodo_ReturnsBadRequestWhenParentBelongsToDifferentUser()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var otherUsersParent = new Todo { UserId = 2, Name = "Other parent", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(otherUsersParent);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.CreateTodo(new TodoController.CreateTodoRequest
+        {
+            Name = "Child",
+            ParentId = otherUsersParent.Id
+        });
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal("Parent todo does not exist.", badRequest.Value);
+    }
+
+    [Fact]
     public async Task UpdateTodo_UpdatesTodoWithExtendedProperties()
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var originalParent = new Todo { Name = "Original parent", CreatedAt = DateTime.UtcNow };
-        var newParent = new Todo { Name = "New parent", CreatedAt = DateTime.UtcNow };
+        var originalParent = new Todo { UserId = TestUserId, Name = "Original parent", CreatedAt = DateTime.UtcNow };
+        var newParent = new Todo { UserId = TestUserId, Name = "New parent", CreatedAt = DateTime.UtcNow };
         var todo = new Todo
         {
+            UserId = TestUserId,
             Name = "Old",
             Description = "Old description",
             Deadline = new DateTime(2029, 12, 31, 0, 0, 0, DateTimeKind.Utc),
@@ -116,7 +182,7 @@ public class TodoControllerTests
         context.Todos.AddRange(originalParent, newParent, todo);
         await context.SaveChangesAsync();
 
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
         var newDeadline = new DateTime(2031, 5, 10, 0, 0, 0, DateTimeKind.Utc);
         var request = new TodoController.UpdateTodoRequest
         {
@@ -149,16 +215,17 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var parent = new Todo { Name = "Parent", CreatedAt = DateTime.UtcNow };
+        var parent = new Todo { UserId = TestUserId, Name = "Parent", CreatedAt = DateTime.UtcNow };
         var todo = new Todo
         {
+            UserId = TestUserId,
             Name = "Child",
             Parent = parent,
             CreatedAt = DateTime.UtcNow
         };
         context.Todos.AddRange(parent, todo);
         await context.SaveChangesAsync();
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
         var request = new TodoController.UpdateTodoRequest
         {
             Name = "Child updated",
@@ -182,10 +249,10 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Todo", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Todo", CreatedAt = DateTime.UtcNow };
         context.Todos.Add(todo);
         await context.SaveChangesAsync();
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
         var request = new TodoController.UpdateTodoRequest
         {
             Name = "Updated",
@@ -208,12 +275,12 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var root = new Todo { Name = "Root", CreatedAt = DateTime.UtcNow };
-        var child = new Todo { Name = "Child", Parent = root, CreatedAt = DateTime.UtcNow };
-        var grandchild = new Todo { Name = "Grandchild", Parent = child, CreatedAt = DateTime.UtcNow };
+        var root = new Todo { UserId = TestUserId, Name = "Root", CreatedAt = DateTime.UtcNow };
+        var child = new Todo { UserId = TestUserId, Name = "Child", Parent = root, CreatedAt = DateTime.UtcNow };
+        var grandchild = new Todo { UserId = TestUserId, Name = "Grandchild", Parent = child, CreatedAt = DateTime.UtcNow };
         context.Todos.AddRange(root, child, grandchild);
         await context.SaveChangesAsync();
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
         var request = new TodoController.UpdateTodoRequest
         {
             Name = "Root",
@@ -236,7 +303,7 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
         var request = new TodoController.UpdateTodoRequest
         {
             Name = "Updated",
@@ -249,18 +316,33 @@ public class TodoControllerTests
     }
 
     [Fact]
+    public async Task GetTodo_ReturnsNotFoundForDifferentUser()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = 2, Name = "Other user's todo", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.GetTodo(todo.Id);
+
+        Assert.IsType<NotFoundResult>(result.Result);
+    }
+
+    [Fact]
     public async Task GetTodo_ReturnsDoableBasedOnDependencies()
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var dependency = new Todo { Name = "Dependency", IsCompleted = false, CreatedAt = DateTime.UtcNow };
-        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var dependency = new Todo { UserId = TestUserId, Name = "Dependency", IsCompleted = false, CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
         context.Todos.AddRange(dependency, todo);
         await context.SaveChangesAsync();
         todo.Dependencies.Add(dependency);
         await context.SaveChangesAsync();
 
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.GetTodo(todo.Id);
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
@@ -281,13 +363,13 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
         var tag = new Tag { Name = "urgent" };
         todo.Tags.Add(tag);
         context.Todos.Add(todo);
         await context.SaveChangesAsync();
 
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.GetTodo(todo.Id);
 
@@ -297,14 +379,83 @@ public class TodoControllerTests
     }
 
     [Fact]
+    public async Task GetTodo_IncludesAttachmentsInResponse()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        context.FileAttachments.Add(new FileAttachment
+        {
+            TodoId = todo.Id,
+            FileName = "notes.txt",
+            StoragePath = "uploads/notes.txt",
+            FileSize = 128,
+            UploadedAt = DateTime.UtcNow,
+            ContentType = "text/plain"
+        });
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.GetTodo(todo.Id);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var fetched = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
+        var attachment = Assert.Single(fetched.Attachments);
+        Assert.Equal("notes.txt", attachment.FileName);
+        Assert.Equal(128, attachment.FileSize);
+        Assert.Equal("text/plain", attachment.ContentType);
+    }
+
+    [Fact]
+    public async Task GetTodos_IncludesAttachmentsPerTodo()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var withAttachment = new Todo { UserId = TestUserId, Name = "With attachment", CreatedAt = DateTime.UtcNow };
+        var withoutAttachment = new Todo { UserId = TestUserId, Name = "Without attachment", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(withAttachment, withoutAttachment);
+        await context.SaveChangesAsync();
+
+        context.FileAttachments.Add(new FileAttachment
+        {
+            TodoId = withAttachment.Id,
+            FileName = "doc.pdf",
+            StoragePath = "uploads/doc.pdf",
+            FileSize = 2048,
+            UploadedAt = DateTime.UtcNow,
+            ContentType = "application/pdf"
+        });
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.GetTodos();
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoResponse>>(okResult.Value).ToList();
+        var withAttachmentResponse = todos.Single(todo => todo.Id == withAttachment.Id);
+        var withoutAttachmentResponse = todos.Single(todo => todo.Id == withoutAttachment.Id);
+
+        var attachment = Assert.Single(withAttachmentResponse.Attachments);
+        Assert.Equal("doc.pdf", attachment.FileName);
+        Assert.Equal(2048, attachment.FileSize);
+        Assert.Equal("application/pdf", attachment.ContentType);
+        Assert.Empty(withoutAttachmentResponse.Attachments);
+    }
+
+    [Fact]
     public async Task AddTag_CreatesTag_NormalizesName_AndReturnsCreated()
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
         context.Todos.Add(todo);
         await context.SaveChangesAsync();
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.AddTag(todo.Id, new TodoController.AddTagRequest { Name = "  UrGent  " });
 
@@ -322,12 +473,12 @@ public class TodoControllerTests
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
         var sharedTag = new Tag { Name = "home" };
-        var existingTodo = new Todo { Name = "Existing", CreatedAt = DateTime.UtcNow };
+        var existingTodo = new Todo { UserId = TestUserId, Name = "Existing", CreatedAt = DateTime.UtcNow };
         existingTodo.Tags.Add(sharedTag);
-        var targetTodo = new Todo { Name = "Target", CreatedAt = DateTime.UtcNow };
+        var targetTodo = new Todo { UserId = TestUserId, Name = "Target", CreatedAt = DateTime.UtcNow };
         context.Todos.AddRange(existingTodo, targetTodo);
         await context.SaveChangesAsync();
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.AddTag(targetTodo.Id, new TodoController.AddTagRequest { Name = "HOME" });
 
@@ -342,10 +493,10 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
         context.Todos.Add(todo);
         await context.SaveChangesAsync();
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.AddTag(todo.Id, new TodoController.AddTagRequest { Name = " " });
 
@@ -357,7 +508,7 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.AddTag(999, new TodoController.AddTagRequest { Name = "home" });
 
@@ -369,12 +520,12 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
         var tag = new Tag { Name = "home" };
         todo.Tags.Add(tag);
         context.Todos.Add(todo);
         await context.SaveChangesAsync();
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.RemoveTag(todo.Id, "HOME");
 
@@ -393,10 +544,10 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
         context.Todos.Add(todo);
         await context.SaveChangesAsync();
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.RemoveTag(todo.Id, "missing");
 
@@ -408,8 +559,8 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var firstTodo = new Todo { Name = "First", CreatedAt = DateTime.UtcNow };
-        var secondTodo = new Todo { Name = "Second", CreatedAt = DateTime.UtcNow };
+        var firstTodo = new Todo { UserId = TestUserId, Name = "First", CreatedAt = DateTime.UtcNow };
+        var secondTodo = new Todo { UserId = TestUserId, Name = "Second", CreatedAt = DateTime.UtcNow };
         var alpha = new Tag { Name = "alpha" };
         var beta = new Tag { Name = "beta" };
         firstTodo.Tags.Add(beta);
@@ -432,12 +583,12 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
-        var dependency = new Todo { Name = "Dependency", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        var dependency = new Todo { UserId = TestUserId, Name = "Dependency", CreatedAt = DateTime.UtcNow };
         context.Todos.AddRange(todo, dependency);
         await context.SaveChangesAsync();
 
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.AddDependency(todo.Id, dependency.Id);
 
@@ -453,14 +604,14 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
-        var dependency = new Todo { Name = "Dependency", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        var dependency = new Todo { UserId = TestUserId, Name = "Dependency", CreatedAt = DateTime.UtcNow };
         context.Todos.AddRange(todo, dependency);
         await context.SaveChangesAsync();
         dependency.Dependencies.Add(todo);
         await context.SaveChangesAsync();
 
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.AddDependency(todo.Id, dependency.Id);
 
@@ -468,17 +619,33 @@ public class TodoControllerTests
     }
 
     [Fact]
+    public async Task AddDependency_ReturnsNotFoundWhenDependencyBelongsToDifferentUser()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        var dependency = new Todo { UserId = 2, Name = "Dependency", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(todo, dependency);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.AddDependency(todo.Id, dependency.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
     public async Task RemoveDependency_RemovesDependency()
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Main", CreatedAt = DateTime.UtcNow };
-        var dependency = new Todo { Name = "Dependency", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        var dependency = new Todo { UserId = TestUserId, Name = "Dependency", CreatedAt = DateTime.UtcNow };
         todo.Dependencies.Add(dependency);
         context.Todos.AddRange(todo, dependency);
         await context.SaveChangesAsync();
 
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.RemoveDependency(todo.Id, dependency.Id);
 
@@ -490,15 +657,329 @@ public class TodoControllerTests
     }
 
     [Fact]
+    public async Task UploadAttachment_CreatesAttachmentAndReturnsCreated()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var fileStorage = new TestFileStorageService("uploads/stored.txt");
+        var controller = CreateAuthenticatedController(context, fileStorageService: fileStorage);
+        var contentBytes = new byte[] { 1, 2, 3, 4 };
+        await using var contentStream = new MemoryStream(contentBytes);
+        var file = new FormFile(contentStream, 0, contentBytes.Length, "file", "notes.txt")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "text/plain"
+        };
+
+        var result = await controller.UploadAttachment(todo.Id, file, CancellationToken.None);
+
+        var created = Assert.IsType<CreatedAtActionResult>(result.Result);
+        var response = Assert.IsType<TodoController.FileAttachmentResponse>(created.Value);
+        Assert.Equal(todo.Id, response.TodoId);
+        Assert.Equal("notes.txt", response.FileName);
+        Assert.Equal("text/plain", response.ContentType);
+        Assert.Equal(contentBytes.Length, response.FileSize);
+        Assert.Equal(1, fileStorage.UploadCallCount);
+
+        var saved = await context.FileAttachments.SingleAsync();
+        Assert.Equal(todo.Id, saved.TodoId);
+        Assert.Equal("notes.txt", saved.FileName);
+        Assert.Equal("uploads/stored.txt", saved.StoragePath);
+    }
+
+    [Fact]
+    public async Task UploadAttachment_ReturnsNotFoundWhenTodoBelongsToDifferentUser()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = 2, Name = "Other", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+        await using var contentStream = new MemoryStream(new byte[] { 1 });
+        var file = new FormFile(contentStream, 0, 1, "file", "notes.txt");
+
+        var result = await controller.UploadAttachment(todo.Id, file, CancellationToken.None);
+
+        Assert.IsType<NotFoundResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task UploadAttachment_ReturnsBadRequestForBlockedFileType()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+        await using var contentStream = new MemoryStream(new byte[] { 1, 2, 3 });
+        var file = new FormFile(contentStream, 0, 3, "file", "malware.exe");
+
+        var result = await controller.UploadAttachment(todo.Id, file, CancellationToken.None);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal("File type is not allowed.", badRequest.Value);
+    }
+
+    [Fact]
+    public async Task UploadAttachment_ReturnsBadRequestWhenFileSizeExceedsLimit()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+        var oversizedFileLength = 10 * 1024 * 1024L + 1;
+        var file = new FormFile(Stream.Null, 0, oversizedFileLength, "file", "large.txt");
+
+        var result = await controller.UploadAttachment(todo.Id, file, CancellationToken.None);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal("File size must not exceed 10 MB.", badRequest.Value);
+    }
+
+    [Fact]
+    public async Task DownloadAttachment_ReturnsFileStreamResultWhenAttachmentExists()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        var tempFilePath = Path.GetTempFileName();
+        await System.IO.File.WriteAllBytesAsync(tempFilePath, new byte[] { 1, 2, 3, 4 });
+        try
+        {
+            context.FileAttachments.Add(new FileAttachment
+            {
+                TodoId = todo.Id,
+                FileName = "notes.txt",
+                StoragePath = tempFilePath,
+                FileSize = 4,
+                ContentType = "text/plain",
+                UploadedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+
+            var attachment = await context.FileAttachments.SingleAsync();
+            var controller = CreateAuthenticatedController(context);
+
+            var result = await controller.DownloadAttachment(todo.Id, attachment.Id, CancellationToken.None);
+
+            var fileResult = Assert.IsType<FileStreamResult>(result);
+            Assert.Equal("text/plain", fileResult.ContentType);
+            Assert.Equal("notes.txt", fileResult.FileDownloadName);
+            await using var stream = fileResult.FileStream;
+            Assert.Equal(4, stream.Length);
+        }
+        finally
+        {
+            if (System.IO.File.Exists(tempFilePath))
+            {
+                System.IO.File.Delete(tempFilePath);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DownloadAttachment_ReturnsNotFoundWhenTodoBelongsToDifferentUser()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = 2, Name = "Other", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        context.FileAttachments.Add(new FileAttachment
+        {
+            TodoId = todo.Id,
+            FileName = "notes.txt",
+            StoragePath = "missing-file.txt",
+            FileSize = 1,
+            ContentType = "text/plain",
+            UploadedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var attachment = await context.FileAttachments.SingleAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.DownloadAttachment(todo.Id, attachment.Id, CancellationToken.None);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task DownloadAttachment_ReturnsNotFoundWhenAttachmentMissing()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.DownloadAttachment(todo.Id, 999, CancellationToken.None);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task DownloadAttachment_ReturnsNotFoundWhenFileMissingFromStorage()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        context.FileAttachments.Add(new FileAttachment
+        {
+            TodoId = todo.Id,
+            FileName = "notes.txt",
+            StoragePath = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.txt"),
+            FileSize = 1,
+            ContentType = "text/plain",
+            UploadedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var attachment = await context.FileAttachments.SingleAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.DownloadAttachment(todo.Id, attachment.Id, CancellationToken.None);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task DeleteAttachment_RemovesAttachmentAndReturnsNoContent()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        context.FileAttachments.Add(new FileAttachment
+        {
+            TodoId = todo.Id,
+            FileName = "notes.txt",
+            StoragePath = "uploads/notes.txt",
+            FileSize = 10,
+            ContentType = "text/plain",
+            UploadedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var attachment = await context.FileAttachments.SingleAsync();
+        var fileStorage = new TestFileStorageService("uploads/default.txt");
+        var controller = CreateAuthenticatedController(context, fileStorageService: fileStorage);
+
+        var result = await controller.DeleteAttachment(todo.Id, attachment.Id, CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Empty(context.FileAttachments);
+        Assert.Single(fileStorage.DeletedPaths);
+        Assert.Equal("uploads/notes.txt", fileStorage.DeletedPaths[0]);
+    }
+
+    [Fact]
+    public async Task DeleteAttachment_ReturnsNotFoundWhenTodoBelongsToDifferentUser()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = 2, Name = "Other", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        context.FileAttachments.Add(new FileAttachment
+        {
+            TodoId = todo.Id,
+            FileName = "notes.txt",
+            StoragePath = "uploads/notes.txt",
+            FileSize = 10,
+            ContentType = "text/plain",
+            UploadedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var attachment = await context.FileAttachments.SingleAsync();
+        var fileStorage = new TestFileStorageService("uploads/default.txt");
+        var controller = CreateAuthenticatedController(context, fileStorageService: fileStorage);
+
+        var result = await controller.DeleteAttachment(todo.Id, attachment.Id, CancellationToken.None);
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.Single(context.FileAttachments);
+        Assert.Empty(fileStorage.DeletedPaths);
+    }
+
+    [Fact]
+    public async Task DeleteAttachment_ReturnsNotFoundWhenAttachmentMissing()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var fileStorage = new TestFileStorageService("uploads/default.txt");
+        var controller = CreateAuthenticatedController(context, fileStorageService: fileStorage);
+
+        var result = await controller.DeleteAttachment(todo.Id, 999, CancellationToken.None);
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.Empty(fileStorage.DeletedPaths);
+    }
+
+    [Fact]
+    public async Task DeleteAttachment_RemovesDatabaseRecordWhenStoredFileIsMissing()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        context.FileAttachments.Add(new FileAttachment
+        {
+            TodoId = todo.Id,
+            FileName = "missing.txt",
+            StoragePath = "uploads/missing.txt",
+            FileSize = 10,
+            ContentType = "text/plain",
+            UploadedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var attachment = await context.FileAttachments.SingleAsync();
+        var fileStorage = new TestFileStorageService("uploads/default.txt");
+        var controller = CreateAuthenticatedController(context, fileStorageService: fileStorage);
+
+        var result = await controller.DeleteAttachment(todo.Id, attachment.Id, CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Empty(context.FileAttachments);
+        Assert.Single(fileStorage.DeletedPaths);
+        Assert.Equal("uploads/missing.txt", fileStorage.DeletedPaths[0]);
+    }
+
+    [Fact]
     public async Task DeleteTodo_RemovesTodo()
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var todo = new Todo { Name = "Delete", CreatedAt = DateTime.UtcNow };
+        var todo = new Todo { UserId = TestUserId, Name = "Delete", CreatedAt = DateTime.UtcNow };
         context.Todos.Add(todo);
         await context.SaveChangesAsync();
 
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.DeleteTodo(todo.Id);
 
@@ -511,7 +992,7 @@ public class TodoControllerTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var context = CreateContext(databaseName);
-        var controller = new TodoController(context);
+        var controller = CreateAuthenticatedController(context);
 
         var result = await controller.DeleteTodo(999);
 
@@ -526,5 +1007,55 @@ public class TodoControllerTests
 
         return new TodoDbContext(options);
     }
+
+    private static TodoController CreateAuthenticatedController(
+        TodoDbContext context,
+        int userId = TestUserId,
+        IFileStorageService? fileStorageService = null)
+    {
+        var controller = new TodoController(context, fileStorageService ?? new TestFileStorageService("uploads/default.txt"));
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                    new[] { new Claim(ClaimTypes.NameIdentifier, userId.ToString()) },
+                    authenticationType: "TestAuth"))
+            }
+        };
+
+        return controller;
+    }
+
+    private sealed class TestFileStorageService : IFileStorageService
+    {
+        private readonly string _relativePath;
+
+        public TestFileStorageService(string relativePath)
+        {
+            _relativePath = relativePath;
+        }
+
+        public int UploadCallCount { get; private set; }
+        public List<string> DeletedPaths { get; } = new();
+
+        public Task<string> UploadAsync(Stream fileStream, string originalFileName, CancellationToken cancellationToken = default)
+        {
+            UploadCallCount++;
+            return Task.FromResult(_relativePath);
+        }
+
+        public void Delete(string relativePath)
+        {
+            DeletedPaths.Add(relativePath);
+        }
+
+        public string GetPath(string relativePath)
+        {
+            return relativePath;
+        }
+    }
 }
+
+
 

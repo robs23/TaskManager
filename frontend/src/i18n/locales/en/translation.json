@@ -8,7 +8,27 @@
   "header": {
     "user": "User",
     "userName": "User Name",
-    "language": "Language"
+    "language": "Language",
+    "logout": "Logout"
+  },
+  "auth": {
+    "loginTitle": "Sign in",
+    "registerTitle": "Create account",
+    "username": "Username",
+    "password": "Password",
+    "login": "Login",
+    "loggingIn": "Logging in...",
+    "register": "Register",
+    "registering": "Registering...",
+    "switchToRegister": "Need an account? Register",
+    "switchToLogin": "Already have an account? Login",
+    "messages": {
+      "registerSuccess": "Registration successful. Please log in."
+    },
+    "errors": {
+      "loginFailed": "Invalid credentials. Please try again.",
+      "registerFailed": "Registration failed. Please check your details."
+    }
   },
   "toolbar": {
     "ariaLabel": "Todo toolbar",
@@ -39,6 +59,12 @@
     "notes": "Notes",
     "parentTask": "Parent task",
     "tags": "Tags",
+    "attachments": "Attachments",
+    "attachmentList": "Attachment list",
+    "noAttachments": "No attachments yet.",
+    "attachmentSizeLimit": "Maximum file size: {{maxSize}}",
+    "uploadProgress": "Uploading {{completed}}/{{total}}: {{fileName}}",
+    "fileTooLarge": "File \"{{fileName}}\" exceeds {{maxSize}}.",
     "tagsPlaceholder": "Add tag",
     "noParentTopLevel": "No parent (top-level)",
     "descriptionOptional": "Description (optional)",
@@ -65,7 +91,11 @@
     "due": "Due",
     "expandSubtasks": "Expand subtasks",
     "collapseSubtasks": "Collapse subtasks",
-    "dragHandle": "Drag todo"
+    "dragHandle": "Drag todo",
+    "noAttachments": "No attachments.",
+    "downloadAttachment": "Download",
+    "deleteAttachment": "Delete",
+    "confirmDeleteAttachment": "Delete this attachment?"
   },
   "errors": {
     "fetchTodos": "Failed to fetch todos.",
@@ -79,6 +109,12 @@
     "removeDependency": "Failed to remove dependency.",
     "removeDependencyMessage": "Unable to remove dependency. Please try again.",
     "syncTags": "Unable to sync tags. Please try again.",
+    "uploadAttachment": "Unable to upload attachment. Please try again.",
+    "attachmentTooLarge": "One or more selected files exceed the 10 MB limit.",
+    "downloadAttachment": "Failed to download attachment.",
+    "downloadAttachmentMessage": "Unable to download attachment. Please try again.",
+    "deleteAttachment": "Failed to delete attachment.",
+    "deleteAttachmentMessage": "Unable to delete attachment. Please try again.",
     "deleteTodo": "Failed to delete todo.",
     "deleteTodoMessage": "Unable to delete todo. Please try again."
   },

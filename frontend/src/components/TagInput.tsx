@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { KeyboardEvent } from 'react'
+import { fetchWithAuth } from '../api/fetchWithAuth'
 
 const TAGS_API = '/api/tags'
 const DEBOUNCE_MS = 300
@@ -61,7 +62,7 @@ function TagInput({ value, onChange, id, placeholder = 'Add tag', disabled = fal
     const abortController = new AbortController()
     const timeoutId = window.setTimeout(async () => {
       try {
-        const response = await fetch(TAGS_API, { signal: abortController.signal })
+        const response = await fetchWithAuth(TAGS_API, { signal: abortController.signal })
         if (!response.ok) {
           throw new Error(`Failed to fetch tags with status ${response.status}`)
         }

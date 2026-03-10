@@ -7,6 +7,14 @@ interface TodoDependencySummary {
   isCompleted: boolean
 }
 
+interface AttachmentSummary {
+  id: number
+  fileName: string
+  fileSize: number
+  uploadedAt: string
+  contentType: string
+}
+
 export interface Todo {
   id: number
   name: string
@@ -19,6 +27,7 @@ export interface Todo {
   tags: string[]
   doable: boolean
   dependencies: TodoDependencySummary[]
+  attachments: AttachmentSummary[]
   children: Todo[]
 }
 
@@ -35,6 +44,8 @@ export interface TodoItemProps {
   onToggleCollapsed: (todoId: number) => void
   onAddDependency: (todo: Todo, dependsOnId: number) => Promise<void>
   onRemoveDependency: (todo: Todo, dependsOnId: number) => Promise<void>
+  onDownloadAttachment: (todoId: number, attachment: AttachmentSummary) => Promise<void>
+  onDeleteAttachment: (todoId: number, attachmentId: number) => Promise<void>
   draggingTodoId: number | null
   activeDropTodoId: number | null
   onDragStart: (todoId: number) => void
@@ -55,6 +66,18 @@ const parseParentId = (value: string): number | null => {
   return Number.isNaN(parsed) ? null : parsed
 }
 
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function TodoItem({
   todo,
   onToggle,
@@ -65,6 +88,8 @@ function TodoItem({
   onToggleCollapsed,
   onAddDependency,
   onRemoveDependency,
+  onDownloadAttachment,
+  onDeleteAttachment,
   draggingTodoId,
   activeDropTodoId,
   onDragStart,
@@ -123,6 +148,7 @@ function TodoItem({
   const deadlineLabel = t('todoItem.due')
   const visibleTags = todo.tags.slice(0, maxVisibleTags)
   const hasHiddenTags = todo.tags.length > maxVisibleTags
+  const attachments = todo.attachments ?? []
 
   return (
     <li className="todo-node">
@@ -348,6 +374,60 @@ function TodoItem({
               ) : null}
               {isBlocked ? <p className="todo-helper">{t('common.completeDependenciesToStart')}</p> : null}
             </div>
+            <div className="todo-attachments">
+              <p className="todo-detail">
+                <span className="todo-detail-label">{t('form.attachments')}:</span>{' '}
+                {attachments.length === 0 ? t('todoItem.noAttachments') : ''}
+              </p>
+              {attachments.length > 0 ? (
+                <ul className="todo-attachment-list">
+                  {attachments.map((attachment) => {
+                    const uploadedDate = new Date(attachment.uploadedAt)
+                    const formattedUploadedAt = Number.isNaN(uploadedDate.getTime())
+                      ? attachment.uploadedAt
+                      : new Intl.DateTimeFormat(i18n.resolvedLanguage ?? i18n.language, {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        }).format(uploadedDate)
+
+                    return (
+                      <li key={attachment.id} className="todo-attachment-item">
+                        <span className="todo-attachment-name" title={attachment.fileName}>
+                          {attachment.fileName}
+                        </span>
+                        <span className="todo-attachment-meta">
+                          {formatFileSize(attachment.fileSize)} • {formattedUploadedAt}
+                        </span>
+                        <div className="todo-attachment-actions">
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => void onDownloadAttachment(todo.id, attachment)}
+                            disabled={isProcessing}
+                          >
+                            {t('todoItem.downloadAttachment')}
+                          </button>
+                          <button
+                            className="secondary-button todo-attachment-delete"
+                            type="button"
+                            onClick={() => {
+                              if (!window.confirm(t('todoItem.confirmDeleteAttachment'))) {
+                                return
+                              }
+
+                              void onDeleteAttachment(todo.id, attachment.id)
+                            }}
+                            disabled={isProcessing}
+                          >
+                            {t('todoItem.deleteAttachment')}
+                          </button>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : null}
+            </div>
           </div>
 
           <div className="todo-item-details-actions">
@@ -423,6 +503,8 @@ function TodoItem({
               onToggleCollapsed={onToggleCollapsed}
               onAddDependency={onAddDependency}
               onRemoveDependency={onRemoveDependency}
+              onDownloadAttachment={onDownloadAttachment}
+              onDeleteAttachment={onDeleteAttachment}
               draggingTodoId={draggingTodoId}
               activeDropTodoId={activeDropTodoId}
               onDragStart={onDragStart}

@@ -5,6 +5,7 @@ namespace TodoApi.Models;
 public class Todo
 {
     public int Id { get; set; }
+    public int UserId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public DateTime? Deadline { get; set; }
@@ -17,6 +18,8 @@ public class Todo
     public ICollection<Todo> Dependencies { get; set; } = new List<Todo>();
     public ICollection<Todo> DependentTodos { get; set; } = new List<Todo>();
     public ICollection<Tag> Tags { get; set; } = new List<Tag>();
+    public ICollection<FileAttachment> Attachments { get; set; } = new List<FileAttachment>();
+    public User? User { get; set; }
 
     [NotMapped]
     public bool Doable => Dependencies?.All(dependency => dependency.IsCompleted) ?? true;

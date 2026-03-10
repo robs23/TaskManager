@@ -227,6 +227,44 @@
   flex-direction: column;
 }
 
+.auth-panel {
+  width: 100%;
+  max-width: 420px;
+  margin: 2rem auto 0;
+  padding: 1rem;
+  border: 1px solid #d3dfec;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.auth-title {
+  margin: 0 0 0.8rem;
+  font-size: 1rem;
+  color: #1f2933;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.auth-actions {
+  margin-top: 0.4rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.auth-submit-button,
+.auth-toggle-button {
+  height: 30px;
+  padding: 0 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .alert {
   background: #fee2e2;
   color: #991b1b;
@@ -313,6 +351,49 @@
 
 .todo-textarea--notes {
   min-height: 80px;
+}
+
+.todo-file-input {
+  padding: 0.2rem 0.4rem;
+}
+
+.todo-field-hint {
+  margin: 0;
+  font-size: 0.74rem;
+  color: #64748b;
+}
+
+.todo-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.todo-file-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid #dbe4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 0.74rem;
+}
+
+.todo-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-file-size {
+  color: #475569;
+  flex-shrink: 0;
 }
 
 .todo-input:focus {
@@ -840,6 +921,65 @@
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.todo-attachments {
+  margin-top: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.todo-attachment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.todo-attachment-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid #dbe4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.todo-attachment-name {
+  min-width: 0;
+  max-width: 320px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1f2933;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.todo-attachment-meta {
+  font-size: 0.74rem;
+  color: #52606d;
+}
+
+.todo-attachment-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.todo-attachment-actions .secondary-button {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.74rem;
+}
+
+.todo-attachment-delete {
+  color: #b91c1c;
 }
 
 .todo-children {

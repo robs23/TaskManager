@@ -9,3 +9,4 @@ ralph.ps1
 readme.md
 log.txt.txt
 backend/TodoApi/todos.db
+backend/TodoApi/uploads

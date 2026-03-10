@@ -3,17 +3,32 @@ import { useTranslation } from 'react-i18next'
 import './App.css'
 import AddTodoForm from './components/AddTodoForm'
 import type { ParentOption, TodoDraft } from './components/AddTodoForm'
+import AuthForm from './components/AuthForm'
 import Header from './components/Header'
 import Modal from './components/Modal'
 import Toolbar from './components/Toolbar'
 import TodoList from './components/TodoList'
+import { fetchWithAuth } from './api/fetchWithAuth'
 
 const API_BASE = '/api/todos'
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 
 interface TodoDependencySummary {
   id: number
   name: string
   isCompleted: boolean
+}
+
+interface AttachmentSummary {
+  id: number
+  fileName: string
+  fileSize: number
+  uploadedAt: string
+  contentType: string
+}
+
+interface UploadedAttachmentResponse extends AttachmentSummary {
+  todoId: number
 }
 
 interface TodoApiResponse {
@@ -28,13 +43,22 @@ interface TodoApiResponse {
   parentId: number | null
   doable?: boolean
   dependencies?: TodoDependencySummary[]
+  attachments?: AttachmentSummary[]
 }
 
 interface Todo extends Omit<TodoApiResponse, 'dependencies'> {
   doable: boolean
   dependencies: TodoDependencySummary[]
   tags: string[]
+  attachments: AttachmentSummary[]
   children: Todo[]
+}
+
+interface UploadProgressState {
+  total: number
+  completed: number
+  currentFileName: string | null
+  isUploading: boolean
 }
 
 interface CreateTodoPayload {
@@ -96,11 +120,21 @@ const hydrateTodo = (todo: TodoApiResponse): Todo => {
         .map((tag) => normalizeTag(tag))
         .filter((tag) => tag.length > 0)
     : []
+  const attachments = Array.isArray(todo.attachments)
+    ? todo.attachments.map((attachment) => ({
+        id: attachment.id,
+        fileName: attachment.fileName,
+        fileSize: Number(attachment.fileSize),
+        uploadedAt: attachment.uploadedAt,
+        contentType: attachment.contentType,
+      }))
+    : []
 
   return {
     ...todo,
     dependencies,
     tags,
+    attachments,
     doable: deriveDoable(dependencies),
     children: [],
   }
@@ -175,6 +209,8 @@ const filterTodoHierarchy = (items: Todo[], showOnlyDoable: boolean): Todo[] => 
 
 function App() {
   const { t } = useTranslation()
+  const [authToken, setAuthToken] = useState<string>(() => localStorage.getItem('token') ?? '')
+  const [authUsername, setAuthUsername] = useState<string>(() => localStorage.getItem('username') ?? '')
   const [todos, setTodos] = useState<Todo[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false)
@@ -188,13 +224,28 @@ function App() {
   const [activeDropTodoId, setActiveDropTodoId] = useState<number | null>(null)
   const [isRootDropActive, setIsRootDropActive] = useState<boolean>(false)
   const [showOnlyDoable, setShowOnlyDoable] = useState<boolean>(false)
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressState>({
+    total: 0,
+    completed: 0,
+    currentFileName: null,
+    isUploading: false,
+  })
+  const [attachmentError, setAttachmentError] = useState<string>('')
+  const [formAttachments, setFormAttachments] = useState<AttachmentSummary[]>([])
+  const isAuthenticated = authToken.length > 0
 
   const loadTodos = async (): Promise<void> => {
+    if (!isAuthenticated) {
+      setTodos([])
+      setIsLoading(false)
+      return
+    }
+
     setIsLoading(true)
     setError('')
 
     try {
-      const response = await fetch(API_BASE)
+      const response = await fetchWithAuth(API_BASE)
       if (!response.ok) {
         throw new Error(t('errors.fetchTodos'))
       }
@@ -212,7 +263,21 @@ function App() {
 
   useEffect(() => {
     void loadTodos()
-  }, [])
+  }, [isAuthenticated])
+
+  const handleAuthenticated = (token: string, username: string): void => {
+    localStorage.setItem('token', token)
+    localStorage.setItem('username', username)
+    setAuthToken(token)
+    setAuthUsername(username)
+    setError('')
+  }
+
+  const handleLogout = (): void => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('username')
+    window.location.reload()
+  }
 
   const { roots, descendantMap } = useMemo(() => buildTodoHierarchy(todos), [todos])
   const parentTodoIds = useMemo(
@@ -236,6 +301,27 @@ function App() {
     [todos],
   )
   const visibleRoots = useMemo(() => filterTodoHierarchy(roots, showOnlyDoable), [roots, showOnlyDoable])
+
+  useEffect(() => {
+    if (!showCreateForm) {
+      setUploadProgress({
+        total: 0,
+        completed: 0,
+        currentFileName: null,
+        isUploading: false,
+      })
+      setAttachmentError('')
+      setFormAttachments([])
+      return
+    }
+
+    if (editingTodo) {
+      setFormAttachments(editingTodo.attachments ?? [])
+      return
+    }
+
+    setFormAttachments([])
+  }, [editingTodo, showCreateForm])
 
   const setProcessing = (id: number, isProcessing: boolean): void => {
     setProcessingIds((prev) => {
@@ -291,7 +377,7 @@ function App() {
     if (tagsToAdd.length > 0) {
       const addResponses = await Promise.all(
         tagsToAdd.map((tag) =>
-          fetch(`${API_BASE}/${todoId}/tags`, {
+          fetchWithAuth(`${API_BASE}/${todoId}/tags`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -310,7 +396,7 @@ function App() {
     if (tagsToRemove.length > 0) {
       const removeResponses = await Promise.all(
         tagsToRemove.map((tag) =>
-          fetch(`${API_BASE}/${todoId}/tags/${encodeURIComponent(tag)}`, {
+          fetchWithAuth(`${API_BASE}/${todoId}/tags/${encodeURIComponent(tag)}`, {
             method: 'DELETE',
           }),
         ),
@@ -336,7 +422,7 @@ function App() {
         parentId: todoDraft.parentId ?? null,
       }
 
-      const response = await fetch(API_BASE, {
+      const response = await fetchWithAuth(API_BASE, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -350,10 +436,13 @@ function App() {
 
       const created = (await response.json()) as TodoApiResponse
       await syncTodoTags(created.id, created.tags ?? [], todoDraft.tags)
+      if (todoDraft.files.length > 0) {
+        await uploadAttachments(created.id, todoDraft.files)
+      }
+      await loadTodos()
       setEditingTodoId(null)
       setShowCreateForm(false)
       setSelectedParentId(null)
-      await loadTodos()
       return true
     } catch (createError) {
       console.error(createError)
@@ -388,7 +477,7 @@ function App() {
         isCompleted: targetTodo.isCompleted,
       }
 
-      const response = await fetch(`${API_BASE}/${targetTodo.id}`, {
+      const response = await fetchWithAuth(`${API_BASE}/${targetTodo.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -401,10 +490,13 @@ function App() {
       }
 
       await syncTodoTags(targetTodo.id, targetTodo.tags, todoDraft.tags)
+      if (todoDraft.files.length > 0) {
+        await uploadAttachments(targetTodo.id, todoDraft.files)
+      }
+      await loadTodos()
       setEditingTodoId(null)
       setShowCreateForm(false)
       setSelectedParentId(null)
-      await loadTodos()
       return true
     } catch (updateError) {
       console.error(updateError)
@@ -447,7 +539,7 @@ function App() {
     setError('')
 
     try {
-      const response = await fetch(`${API_BASE}/${todo.id}`, {
+      const response = await fetchWithAuth(`${API_BASE}/${todo.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -492,7 +584,7 @@ function App() {
     setError('')
 
     try {
-      const response = await fetch(`${API_BASE}/${todo.id}/dependencies/${dependsOnId}`, {
+      const response = await fetchWithAuth(`${API_BASE}/${todo.id}/dependencies/${dependsOnId}`, {
         method: 'POST',
       })
 
@@ -541,7 +633,7 @@ function App() {
     setError('')
 
     try {
-      const response = await fetch(`${API_BASE}/${todo.id}/dependencies/${dependsOnId}`, {
+      const response = await fetchWithAuth(`${API_BASE}/${todo.id}/dependencies/${dependsOnId}`, {
         method: 'DELETE',
       })
 
@@ -591,7 +683,7 @@ function App() {
     setError('')
 
     try {
-      const response = await fetch(`${API_BASE}/${todo.id}`, {
+      const response = await fetchWithAuth(`${API_BASE}/${todo.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -750,6 +842,144 @@ function App() {
     setShowCreateForm(false)
     setSelectedParentId(null)
     setEditingTodoId(null)
+    setAttachmentError('')
+    setUploadProgress({
+      total: 0,
+      completed: 0,
+      currentFileName: null,
+      isUploading: false,
+    })
+    setFormAttachments([])
+  }
+
+  const uploadAttachments = async (todoId: number, files: File[]): Promise<void> => {
+    if (files.length === 0) {
+      return
+    }
+
+    setAttachmentError('')
+    setUploadProgress({
+      total: files.length,
+      completed: 0,
+      currentFileName: files[0].name,
+      isUploading: true,
+    })
+
+    let completed = 0
+
+    try {
+      for (const file of files) {
+        if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+          throw new Error(t('errors.attachmentTooLarge'))
+        }
+
+        setUploadProgress((previous) => ({
+          ...previous,
+          currentFileName: file.name,
+        }))
+
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const response = await fetchWithAuth(`${API_BASE}/${todoId}/attachments`, {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!response.ok) {
+          throw new Error(t('errors.uploadAttachment'))
+        }
+
+        const uploaded = (await response.json()) as UploadedAttachmentResponse
+        setFormAttachments((previous) => [
+          ...previous,
+          {
+            id: uploaded.id,
+            fileName: uploaded.fileName,
+            fileSize: uploaded.fileSize,
+            uploadedAt: uploaded.uploadedAt,
+            contentType: uploaded.contentType,
+          },
+        ])
+
+        completed += 1
+        setUploadProgress((previous) => ({
+          ...previous,
+          completed,
+        }))
+      }
+    } catch (uploadError) {
+      console.error(uploadError)
+      setAttachmentError(t('errors.uploadAttachment'))
+      throw uploadError
+    } finally {
+      setUploadProgress((previous) => ({
+        ...previous,
+        currentFileName: null,
+        isUploading: false,
+      }))
+    }
+  }
+
+  const handleDownloadAttachment = async (
+    todoId: number,
+    attachment: AttachmentSummary,
+  ): Promise<void> => {
+    setProcessing(todoId, true)
+    setError('')
+
+    try {
+      const response = await fetchWithAuth(`${API_BASE}/${todoId}/attachments/${attachment.id}`)
+      if (!response.ok) {
+        throw new Error(t('errors.downloadAttachment'))
+      }
+
+      const blob = await response.blob()
+      const downloadUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = attachment.fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(downloadUrl)
+    } catch (downloadError) {
+      console.error(downloadError)
+      setError(t('errors.downloadAttachmentMessage'))
+    } finally {
+      setProcessing(todoId, false)
+    }
+  }
+
+  const handleDeleteAttachment = async (todoId: number, attachmentId: number): Promise<void> => {
+    setProcessing(todoId, true)
+    setError('')
+
+    try {
+      const response = await fetchWithAuth(`${API_BASE}/${todoId}/attachments/${attachmentId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error(t('errors.deleteAttachment'))
+      }
+
+      setTodos((previous) =>
+        previous.map((todo) =>
+          todo.id === todoId
+            ? { ...todo, attachments: todo.attachments.filter((attachment) => attachment.id !== attachmentId) }
+            : todo,
+        ),
+      )
+      setFormAttachments((previous) =>
+        previous.filter((attachment) => attachment.id !== attachmentId),
+      )
+    } catch (deleteError) {
+      console.error(deleteError)
+      setError(t('errors.deleteAttachmentMessage'))
+    } finally {
+      setProcessing(todoId, false)
+    }
   }
 
   const handleDelete = async (todo: Todo): Promise<void> => {
@@ -757,7 +987,7 @@ function App() {
     setError('')
 
     try {
-      const response = await fetch(`${API_BASE}/${todo.id}`, {
+      const response = await fetchWithAuth(`${API_BASE}/${todo.id}`, {
         method: 'DELETE',
       })
 
@@ -781,61 +1011,78 @@ function App() {
         isRefreshing={isLoading}
         onToggleCreate={handleToggleCreateForm}
         isCreateVisible={showCreateForm}
+        userName={authUsername}
+        isAuthenticated={isAuthenticated}
+        onLogout={handleLogout}
       />
-      <Toolbar
-        ariaLabel={t('toolbar.ariaLabel')}
-        collapseAllLabel={allParentsCollapsed ? t('toolbar.expandAll') : t('toolbar.collapseAll')}
-        isAllCollapsed={allParentsCollapsed}
-        isCollapseToggleDisabled={parentTodoIds.length === 0}
-        onToggleAllCollapsed={handleToggleAllCollapsed}
-      >
-        <button
-          className={`toolbar-filter-button${showOnlyDoable ? ' is-active' : ''}`}
-          type="button"
-          onClick={handleToggleDoableFilter}
-          aria-pressed={showOnlyDoable}
+      {isAuthenticated ? (
+        <Toolbar
+          ariaLabel={t('toolbar.ariaLabel')}
+          collapseAllLabel={allParentsCollapsed ? t('toolbar.expandAll') : t('toolbar.collapseAll')}
+          isAllCollapsed={allParentsCollapsed}
+          isCollapseToggleDisabled={parentTodoIds.length === 0}
+          onToggleAllCollapsed={handleToggleAllCollapsed}
         >
-          {showOnlyDoable ? t('toolbar.showAll') : t('toolbar.showDoable')}
-        </button>
-      </Toolbar>
+          <button
+            className={`toolbar-filter-button${showOnlyDoable ? ' is-active' : ''}`}
+            type="button"
+            onClick={handleToggleDoableFilter}
+            aria-pressed={showOnlyDoable}
+          >
+            {showOnlyDoable ? t('toolbar.showAll') : t('toolbar.showDoable')}
+          </button>
+        </Toolbar>
+      ) : null}
 
       <section className="app-body">
-        {error ? (
+        {!isAuthenticated ? (
+          <AuthForm onAuthenticated={handleAuthenticated} />
+        ) : null}
+
+        {isAuthenticated && error ? (
           <div className="alert" role="alert">
             {error}
           </div>
         ) : null}
 
-        <Modal
-          isOpen={showCreateForm}
-          title={editingTodo ? t('modal.editTodo') : t('modal.createTodo')}
-          onClose={handleCloseCreateForm}
-        >
-          <AddTodoForm
-            onSubmit={handleSubmitTodo}
-            isSubmitting={isSubmitting}
-            parentOptions={parentOptions}
-            parentId={selectedParentId}
-            onParentChange={setSelectedParentId}
-            onCancel={handleCloseCreateForm}
-            isEditMode={Boolean(editingTodo)}
-            initialDraft={
-              editingTodo
-                ? {
-                    name: editingTodo.name,
-                    description: editingTodo.description ?? '',
-                    deadline: editingTodo.deadline ?? '',
-                    notes: editingTodo.notes ?? '',
-                    tags: editingTodo.tags,
-                  }
-                : undefined
-            }
-          />
-        </Modal>
+        {isAuthenticated ? (
+          <Modal
+            isOpen={showCreateForm}
+            title={editingTodo ? t('modal.editTodo') : t('modal.createTodo')}
+            onClose={handleCloseCreateForm}
+          >
+            <AddTodoForm
+              onSubmit={handleSubmitTodo}
+              isSubmitting={isSubmitting}
+              parentOptions={parentOptions}
+              parentId={selectedParentId}
+              onParentChange={setSelectedParentId}
+              attachments={formAttachments}
+              uploadProgress={uploadProgress}
+              attachmentError={attachmentError}
+              maxFileSizeBytes={MAX_UPLOAD_SIZE_BYTES}
+              onCancel={handleCloseCreateForm}
+              isEditMode={Boolean(editingTodo)}
+              initialDraft={
+                editingTodo
+                  ? {
+                      name: editingTodo.name,
+                      description: editingTodo.description ?? '',
+                      deadline: editingTodo.deadline ?? '',
+                      notes: editingTodo.notes ?? '',
+                      tags: editingTodo.tags,
+                    }
+                  : undefined
+              }
+            />
+          </Modal>
+        ) : null}
 
-        {isLoading ? (
+        {isAuthenticated && isLoading ? (
           <p className="loading">{t('app.loading')}</p>
-        ) : (
+        ) : null}
+
+        {isAuthenticated && !isLoading ? (
           <TodoList
             todos={visibleRoots}
             allTodos={todos}
@@ -849,6 +1096,8 @@ function App() {
             onToggleCollapsed={handleToggleCollapsed}
             onAddDependency={handleAddDependency}
             onRemoveDependency={handleRemoveDependency}
+            onDownloadAttachment={handleDownloadAttachment}
+            onDeleteAttachment={handleDeleteAttachment}
             draggingTodoId={draggingTodoId}
             activeDropTodoId={activeDropTodoId}
             isRootDropActive={isRootDropActive}
@@ -861,7 +1110,7 @@ function App() {
             onClearDropTargets={clearDropTargets}
             processingIds={processingIds}
           />
-        )}
+        ) : null}
       </section>
     </div>
   )

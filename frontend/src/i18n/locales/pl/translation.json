@@ -8,7 +8,27 @@
   "header": {
     "user": "Użytkownik",
     "userName": "Nazwa użytkownika",
-    "language": "Język"
+    "language": "Język",
+    "logout": "Wyloguj"
+  },
+  "auth": {
+    "loginTitle": "Zaloguj się",
+    "registerTitle": "Utwórz konto",
+    "username": "Nazwa użytkownika",
+    "password": "Hasło",
+    "login": "Zaloguj",
+    "loggingIn": "Logowanie...",
+    "register": "Zarejestruj",
+    "registering": "Rejestrowanie...",
+    "switchToRegister": "Nie masz konta? Zarejestruj się",
+    "switchToLogin": "Masz już konto? Zaloguj się",
+    "messages": {
+      "registerSuccess": "Rejestracja zakończona. Zaloguj się."
+    },
+    "errors": {
+      "loginFailed": "Nieprawidłowe dane logowania. Spróbuj ponownie.",
+      "registerFailed": "Rejestracja nie powiodła się. Sprawdź dane."
+    }
   },
   "toolbar": {
     "ariaLabel": "Pasek narzędzi zadań",
@@ -39,6 +59,12 @@
     "notes": "Notatki",
     "parentTask": "Zadanie nadrzędne",
     "tags": "Tagi",
+    "attachments": "Załączniki",
+    "attachmentList": "Lista załączników",
+    "noAttachments": "Brak załączników.",
+    "attachmentSizeLimit": "Maksymalny rozmiar pliku: {{maxSize}}",
+    "uploadProgress": "Przesyłanie {{completed}}/{{total}}: {{fileName}}",
+    "fileTooLarge": "Plik \"{{fileName}}\" przekracza {{maxSize}}.",
     "tagsPlaceholder": "Dodaj tag",
     "noParentTopLevel": "Brak nadrzędnego (poziom główny)",
     "descriptionOptional": "Opis (opcjonalnie)",
@@ -65,7 +91,11 @@
     "due": "Termin",
     "expandSubtasks": "Rozwiń podzadania",
     "collapseSubtasks": "Zwiń podzadania",
-    "dragHandle": "Przeciągnij zadanie"
+    "dragHandle": "Przeciągnij zadanie",
+    "noAttachments": "Brak załączników.",
+    "downloadAttachment": "Pobierz",
+    "deleteAttachment": "Usuń",
+    "confirmDeleteAttachment": "Usunąć ten załącznik?"
   },
   "errors": {
     "fetchTodos": "Nie udało się pobrać zadań.",
@@ -79,6 +109,12 @@
     "removeDependency": "Nie udało się usunąć zależności.",
     "removeDependencyMessage": "Nie można usunąć zależności. Spróbuj ponownie.",
     "syncTags": "Nie można zsynchronizować tagów. Spróbuj ponownie.",
+    "uploadAttachment": "Nie można przesłać załącznika. Spróbuj ponownie.",
+    "attachmentTooLarge": "Co najmniej jeden wybrany plik przekracza limit 10 MB.",
+    "downloadAttachment": "Nie udało się pobrać załącznika.",
+    "downloadAttachmentMessage": "Nie można pobrać załącznika. Spróbuj ponownie.",
+    "deleteAttachment": "Nie udało się usunąć załącznika.",
+    "deleteAttachmentMessage": "Nie można usunąć załącznika. Spróbuj ponownie.",
     "deleteTodo": "Nie udało się usunąć zadania.",
     "deleteTodoMessage": "Nie można usunąć zadania. Spróbuj ponownie."
   },

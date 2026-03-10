@@ -6,6 +6,9 @@ interface HeaderProps {
   isRefreshing: boolean
   onToggleCreate: () => void
   isCreateVisible: boolean
+  userName: string
+  isAuthenticated: boolean
+  onLogout: () => void
 }
 
 const normalizeLanguage = (language: string | undefined): 'en' | 'pl' => {
@@ -16,7 +19,15 @@ const normalizeLanguage = (language: string | undefined): 'en' | 'pl' => {
   return 'en'
 }
 
-function Header({ onRefresh, isRefreshing, onToggleCreate, isCreateVisible }: HeaderProps) {
+function Header({
+  onRefresh,
+  isRefreshing,
+  onToggleCreate,
+  isCreateVisible,
+  userName,
+  isAuthenticated,
+  onLogout,
+}: HeaderProps) {
   const { t, i18n } = useTranslation()
   const currentLanguage = normalizeLanguage(i18n.resolvedLanguage ?? i18n.language)
 
@@ -34,7 +45,9 @@ function Header({ onRefresh, isRefreshing, onToggleCreate, isCreateVisible }: He
       <div className="app-header-controls">
         <div className="app-user-info">
           <span className="app-user-label">{t('header.user')}:</span>
-          <span className="app-user-name">{t('header.userName')}</span>
+          <span className="app-user-name">
+            {isAuthenticated ? userName : t('header.userName')}
+          </span>
         </div>
         <div className="app-language-control">
           <label className="sr-only" htmlFor="language-selector">
@@ -51,21 +64,28 @@ function Header({ onRefresh, isRefreshing, onToggleCreate, isCreateVisible }: He
             <option value="pl">PL</option>
           </select>
         </div>
-        <button
-          className="header-action-button header-action-button--create"
-          type="button"
-          onClick={onToggleCreate}
-        >
-          {isCreateVisible ? t('buttons.cancel') : t('buttons.create')}
-        </button>
-        <button
-          className="header-action-button"
-          type="button"
-          onClick={() => void onRefresh()}
-          disabled={isRefreshing}
-        >
-          {t('app.refresh')}
-        </button>
+        {isAuthenticated ? (
+          <>
+            <button
+              className="header-action-button header-action-button--create"
+              type="button"
+              onClick={onToggleCreate}
+            >
+              {isCreateVisible ? t('buttons.cancel') : t('buttons.create')}
+            </button>
+            <button
+              className="header-action-button"
+              type="button"
+              onClick={() => void onRefresh()}
+              disabled={isRefreshing}
+            >
+              {t('app.refresh')}
+            </button>
+            <button className="header-action-button" type="button" onClick={onLogout}>
+              {t('header.logout')}
+            </button>
+          </>
+        ) : null}
       </div>
     </header>
   )

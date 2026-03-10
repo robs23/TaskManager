@@ -15,6 +15,8 @@ interface TodoListProps {
   onToggleCollapsed: (todoId: number) => void
   onAddDependency: (todo: Todo, dependsOnId: number) => Promise<void>
   onRemoveDependency: (todo: Todo, dependsOnId: number) => Promise<void>
+  onDownloadAttachment: (todoId: number, attachment: Todo['attachments'][number]) => Promise<void>
+  onDeleteAttachment: (todoId: number, attachmentId: number) => Promise<void>
   draggingTodoId: number | null
   activeDropTodoId: number | null
   isRootDropActive: boolean
@@ -41,6 +43,8 @@ function TodoList({
   onToggleCollapsed,
   onAddDependency,
   onRemoveDependency,
+  onDownloadAttachment,
+  onDeleteAttachment,
   draggingTodoId,
   activeDropTodoId,
   isRootDropActive,
@@ -100,10 +104,12 @@ function TodoList({
           onEdit={onEdit}
           onStartEdit={onStartEdit}
           onAddSubtask={onAddSubtask}
-          onToggleCollapsed={onToggleCollapsed}
-          onAddDependency={onAddDependency}
-          onRemoveDependency={onRemoveDependency}
-          draggingTodoId={draggingTodoId}
+            onToggleCollapsed={onToggleCollapsed}
+            onAddDependency={onAddDependency}
+            onRemoveDependency={onRemoveDependency}
+            onDownloadAttachment={onDownloadAttachment}
+            onDeleteAttachment={onDeleteAttachment}
+            draggingTodoId={draggingTodoId}
           activeDropTodoId={activeDropTodoId}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}

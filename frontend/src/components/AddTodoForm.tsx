@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import TagInput from './TagInput'
 
@@ -10,6 +10,7 @@ export interface TodoDraft {
   notes: string
   parentId: number | null
   tags: string[]
+  files: File[]
 }
 
 export interface ParentOption {
@@ -23,9 +24,28 @@ export interface AddTodoFormProps {
   parentOptions: ParentOption[]
   parentId: number | null
   onParentChange: (parentId: number | null) => void
+  attachments?: AttachmentSummary[]
+  uploadProgress?: UploadProgress
+  attachmentError?: string
+  maxFileSizeBytes?: number
   onCancel?: () => void
   isEditMode?: boolean
   initialDraft?: Partial<Omit<TodoDraft, 'parentId'>>
+}
+
+export interface AttachmentSummary {
+  id: number
+  fileName: string
+  fileSize: number
+  uploadedAt: string
+  contentType: string
+}
+
+export interface UploadProgress {
+  total: number
+  completed: number
+  currentFileName: string | null
+  isUploading: boolean
 }
 
 const parseParentId = (value: string): number | null => {
@@ -37,12 +57,28 @@ const parseParentId = (value: string): number | null => {
   return Number.isNaN(parsed) ? null : parsed
 }
 
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function AddTodoForm({
   onSubmit,
   isSubmitting,
   parentOptions,
   parentId,
   onParentChange,
+  attachments = [],
+  uploadProgress,
+  attachmentError = '',
+  maxFileSizeBytes = 10 * 1024 * 1024,
   onCancel,
   isEditMode = false,
   initialDraft,
@@ -53,7 +89,9 @@ function AddTodoForm({
   const [deadline, setDeadline] = useState<string>(initialDraft?.deadline ?? '')
   const [notes, setNotes] = useState<string>(initialDraft?.notes ?? '')
   const [tags, setTags] = useState<string[]>(initialDraft?.tags ?? [])
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [formError, setFormError] = useState<string>('')
+  const [fileError, setFileError] = useState<string>('')
 
   useEffect(() => {
     setName(initialDraft?.name ?? '')
@@ -61,8 +99,30 @@ function AddTodoForm({
     setDeadline(initialDraft?.deadline ?? '')
     setNotes(initialDraft?.notes ?? '')
     setTags(initialDraft?.tags ?? [])
+    setSelectedFiles([])
     setFormError('')
+    setFileError('')
   }, [initialDraft, isEditMode])
+
+  const handleFilesChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    const files = Array.from(event.target.files ?? [])
+    const oversized = files.find((file) => file.size > maxFileSizeBytes)
+
+    if (oversized) {
+      setSelectedFiles([])
+      setFileError(
+        t('form.fileTooLarge', {
+          fileName: oversized.name,
+          maxSize: formatFileSize(maxFileSizeBytes),
+        }),
+      )
+      event.target.value = ''
+      return
+    }
+
+    setFileError('')
+    setSelectedFiles(files)
+  }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
@@ -81,6 +141,7 @@ function AddTodoForm({
       notes,
       parentId,
       tags,
+      files: selectedFiles,
     })
 
     if (didSave) {
@@ -89,6 +150,8 @@ function AddTodoForm({
       setDeadline('')
       setNotes('')
       setTags([])
+      setSelectedFiles([])
+      setFileError('')
     }
   }
 
@@ -187,6 +250,56 @@ function AddTodoForm({
             disabled={isSubmitting}
           />
         </div>
+        <div className="todo-field">
+          <label className="todo-field-label" htmlFor="todo-files">
+            {t('form.attachments')}
+          </label>
+          <input
+            id="todo-files"
+            className="todo-input todo-file-input"
+            type="file"
+            multiple
+            onChange={handleFilesChange}
+            disabled={isSubmitting}
+          />
+          <p className="todo-field-hint">
+            {t('form.attachmentSizeLimit', { maxSize: formatFileSize(maxFileSizeBytes) })}
+          </p>
+          {selectedFiles.length > 0 ? (
+            <ul className="todo-file-list">
+              {selectedFiles.map((file) => (
+                <li key={`${file.name}-${file.lastModified}`} className="todo-file-list-item">
+                  <span className="todo-file-name">{file.name}</span>
+                  <span className="todo-file-size">{formatFileSize(file.size)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <div className="todo-field">
+          <p className="todo-field-label">{t('form.attachmentList')}</p>
+          {attachments.length === 0 ? (
+            <p className="todo-field-hint">{t('form.noAttachments')}</p>
+          ) : (
+            <ul className="todo-file-list">
+              {attachments.map((attachment) => (
+                <li key={attachment.id} className="todo-file-list-item">
+                  <span className="todo-file-name">{attachment.fileName}</span>
+                  <span className="todo-file-size">{formatFileSize(attachment.fileSize)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {uploadProgress?.isUploading ? (
+            <p className="todo-field-hint">
+              {t('form.uploadProgress', {
+                completed: uploadProgress.completed,
+                total: uploadProgress.total,
+                fileName: uploadProgress.currentFileName ?? '',
+              })}
+            </p>
+          ) : null}
+        </div>
       </div>
       <div className="todo-controls">
         <button className="primary-button" type="submit" disabled={isSubmitting}>
@@ -205,6 +318,8 @@ function AddTodoForm({
         ) : null}
       </div>
       {formError ? <p className="form-error">{formError}</p> : null}
+      {fileError ? <p className="form-error">{fileError}</p> : null}
+      {attachmentError ? <p className="form-error">{attachmentError}</p> : null}
     </form>
   )
 }

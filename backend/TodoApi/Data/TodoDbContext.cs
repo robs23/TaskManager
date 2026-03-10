@@ -12,6 +12,8 @@ public class TodoDbContext : DbContext
 
     public DbSet<Todo> Todos => Set<Todo>();
     public DbSet<Tag> Tags => Set<Tag>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<FileAttachment> FileAttachments => Set<FileAttachment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -20,6 +22,18 @@ public class TodoDbContext : DbContext
             .WithMany(t => t.Children)
             .HasForeignKey(t => t.ParentId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Todo>()
+            .HasOne(t => t.User)
+            .WithMany()
+            .HasForeignKey(t => t.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<FileAttachment>()
+            .HasOne(f => f.Todo)
+            .WithMany(t => t.Attachments)
+            .HasForeignKey(f => f.TodoId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<Todo>()
             .HasMany(t => t.Dependencies)
@@ -62,6 +76,15 @@ public class TodoDbContext : DbContext
         modelBuilder.Entity<Tag>()
             .HasIndex(t => t.Name)
             .IsUnique();
+
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.Property(u => u.Username)
+                .UseCollation("NOCASE");
+
+            entity.HasIndex(u => u.Username)
+                .IsUnique();
+        });
 
         base.OnModelCreating(modelBuilder);
     }
