@@ -89,6 +89,7 @@
     "markAsComplete": "Mark as complete",
     "markAsIncomplete": "Mark as incomplete",
     "due": "Due",
+    "hasAttachments": "Has attachments",
     "expandSubtasks": "Expand subtasks",
     "collapseSubtasks": "Collapse subtasks",
     "dragHandle": "Drag todo",
@@ -121,6 +122,9 @@
   "modal": {
     "createTodo": "Create Todo",
     "editTodo": "Edit Todo"
+  },
+  "toast": {
+    "blockedByDependencies": "Cannot complete: finish all dependencies first"
   }
 }
 

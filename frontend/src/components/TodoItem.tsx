@@ -36,6 +36,7 @@ export interface TodoItemProps {
   allTodos: Todo[]
   descendantMap: Map<number, Set<number>>
   collapsedTodoIds: Set<number>
+  highlightedTodoIds: Set<number>
   onToggle: (todo: Todo) => Promise<void>
   onDelete: (todo: Todo) => Promise<void>
   onEdit: (todo: Todo, nextParentId: number | null) => Promise<void>
@@ -99,6 +100,7 @@ function TodoItem({
   allTodos,
   descendantMap,
   collapsedTodoIds,
+  highlightedTodoIds,
   isProcessing,
   processingIds,
   depth,
@@ -118,8 +120,8 @@ function TodoItem({
       !(todo.dependencies ?? []).some((dependency) => dependency.id === option.id),
   )
   const isBlocked = !todo.doable && !todo.isCompleted
-  const isToggleLocked = isProcessing || isBlocked
   const hasChildren = todo.children.length > 0
+  const isHighlighted = highlightedTodoIds.has(todo.id)
   const isCollapsed = collapsedTodoIds.has(todo.id)
   const isDraggingThisTodo = draggingTodoId === todo.id
   const isDropTarget = activeDropTodoId === todo.id
@@ -151,7 +153,7 @@ function TodoItem({
   const attachments = todo.attachments ?? []
 
   return (
-    <li className="todo-node">
+    <li className={`todo-node${isHighlighted ? ' todo-highlighted' : ''}`}>
       <div
         className={`todo-item${todo.isCompleted ? ' is-completed' : ''}${
           depth > 0 ? ' todo-item--subtask' : ''
@@ -242,10 +244,10 @@ function TodoItem({
           <span className="todo-collapse-placeholder" aria-hidden="true" />
         )}
         <button
-          className={`todo-toggle${todo.isCompleted ? ' is-completed' : ''}`}
+          className={`todo-toggle${todo.isCompleted ? ' is-completed' : ''}${isBlocked ? ' is-blocked' : ''}`}
           type="button"
           onClick={() => void onToggle(todo)}
-          disabled={isToggleLocked}
+          disabled={isProcessing}
           aria-pressed={todo.isCompleted}
           aria-label={
             todo.isCompleted ? t('todoItem.markAsIncomplete') : t('todoItem.markAsComplete')
@@ -260,6 +262,11 @@ function TodoItem({
               <span className="todo-title" title={todo.name}>
                 {todo.name}
               </span>
+              {attachments.length > 0 ? (
+                <span className="todo-attachment-indicator" title={t('todoItem.hasAttachments')}>
+                  📎
+                </span>
+              ) : null}
               {visibleTags.length > 0 ? (
                 <span className="todo-tag-list" aria-label="Todo tags">
                   {visibleTags.map((tag) => (
@@ -514,6 +521,7 @@ function TodoItem({
               allTodos={allTodos}
               descendantMap={descendantMap}
               collapsedTodoIds={collapsedTodoIds}
+              highlightedTodoIds={highlightedTodoIds}
               isProcessing={processingIds.includes(child.id)}
               processingIds={processingIds}
               depth={depth + 1}

@@ -6,6 +6,7 @@ import type { ParentOption, TodoDraft } from './components/AddTodoForm'
 import AuthForm from './components/AuthForm'
 import Header from './components/Header'
 import Modal from './components/Modal'
+import Toast from './components/Toast'
 import Toolbar from './components/Toolbar'
 import TodoList from './components/TodoList'
 import { fetchWithAuth } from './api/fetchWithAuth'
@@ -232,6 +233,8 @@ function App() {
   })
   const [attachmentError, setAttachmentError] = useState<string>('')
   const [formAttachments, setFormAttachments] = useState<AttachmentSummary[]>([])
+  const [toast, setToast] = useState<string | null>(null)
+  const [highlightedTodoIds, setHighlightedTodoIds] = useState<Set<number>>(new Set<number>())
   const isAuthenticated = authToken.length > 0
 
   const loadTodos = async (): Promise<void> => {
@@ -530,6 +533,14 @@ function App() {
 
   const handleToggle = async (todo: Todo): Promise<void> => {
     if (!todo.doable && !todo.isCompleted) {
+      setToast(t('toast.blockedByDependencies'))
+      const blockingTodoIds = (todo.dependencies ?? [])
+        .filter((dependency) => !dependency.isCompleted)
+        .map((dependency) => dependency.id)
+      setHighlightedTodoIds(new Set<number>(blockingTodoIds))
+      window.setTimeout(() => {
+        setHighlightedTodoIds(new Set<number>())
+      }, 2000)
       return
     }
 
@@ -951,6 +962,17 @@ function App() {
     }
   }
 
+  const removeAttachmentFromState = (todoId: number, attachmentId: number): void => {
+    setTodos((previous) =>
+      previous.map((todo) =>
+        todo.id === todoId
+          ? { ...todo, attachments: todo.attachments.filter((attachment) => attachment.id !== attachmentId) }
+          : todo,
+      ),
+    )
+    setFormAttachments((previous) => previous.filter((attachment) => attachment.id !== attachmentId))
+  }
+
   const handleDeleteAttachment = async (todoId: number, attachmentId: number): Promise<void> => {
     setProcessing(todoId, true)
     setError('')
@@ -964,16 +986,7 @@ function App() {
         throw new Error(t('errors.deleteAttachment'))
       }
 
-      setTodos((previous) =>
-        previous.map((todo) =>
-          todo.id === todoId
-            ? { ...todo, attachments: todo.attachments.filter((attachment) => attachment.id !== attachmentId) }
-            : todo,
-        ),
-      )
-      setFormAttachments((previous) =>
-        previous.filter((attachment) => attachment.id !== attachmentId),
-      )
+      removeAttachmentFromState(todoId, attachmentId)
     } catch (deleteError) {
       console.error(deleteError)
       setError(t('errors.deleteAttachmentMessage'))
@@ -1061,11 +1074,17 @@ function App() {
               uploadProgress={uploadProgress}
               attachmentError={attachmentError}
               maxFileSizeBytes={MAX_UPLOAD_SIZE_BYTES}
+              onAttachmentDeleted={(attachmentId) => {
+                if (editingTodo) {
+                  removeAttachmentFromState(editingTodo.id, attachmentId)
+                }
+              }}
               onCancel={handleCloseCreateForm}
               isEditMode={Boolean(editingTodo)}
               initialDraft={
                 editingTodo
                   ? {
+                      id: editingTodo.id,
                       name: editingTodo.name,
                       description: editingTodo.description ?? '',
                       deadline: editingTodo.deadline ?? '',
@@ -1088,6 +1107,7 @@ function App() {
             allTodos={todos}
             descendantMap={descendantMap}
             collapsedTodoIds={collapsedTodoIds}
+            highlightedTodoIds={highlightedTodoIds}
             onToggle={handleToggle}
             onDelete={handleDelete}
             onEdit={handleReparent}
@@ -1112,6 +1132,7 @@ function App() {
           />
         ) : null}
       </section>
+      {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
     </div>
   )
 }

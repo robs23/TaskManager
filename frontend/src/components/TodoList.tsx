@@ -7,6 +7,7 @@ interface TodoListProps {
   allTodos: Todo[]
   descendantMap: Map<number, Set<number>>
   collapsedTodoIds: Set<number>
+  highlightedTodoIds: Set<number>
   onToggle: (todo: Todo) => Promise<void>
   onDelete: (todo: Todo) => Promise<void>
   onEdit: (todo: Todo, nextParentId: number | null) => Promise<void>
@@ -35,6 +36,7 @@ function TodoList({
   allTodos,
   descendantMap,
   collapsedTodoIds,
+  highlightedTodoIds,
   onToggle,
   onDelete,
   onEdit,
@@ -118,6 +120,7 @@ function TodoList({
           allTodos={allTodos}
           descendantMap={descendantMap}
           collapsedTodoIds={collapsedTodoIds}
+          highlightedTodoIds={highlightedTodoIds}
           isProcessing={processingIds.includes(todo.id)}
           processingIds={processingIds}
           depth={0}

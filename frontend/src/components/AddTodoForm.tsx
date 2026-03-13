@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { fetchWithAuth } from '../api/fetchWithAuth'
 import TagInput from './TagInput'
 
 export interface TodoDraft {
@@ -28,9 +29,10 @@ export interface AddTodoFormProps {
   uploadProgress?: UploadProgress
   attachmentError?: string
   maxFileSizeBytes?: number
+  onAttachmentDeleted?: (attachmentId: number) => void
   onCancel?: () => void
   isEditMode?: boolean
-  initialDraft?: Partial<Omit<TodoDraft, 'parentId'>>
+  initialDraft?: Partial<Omit<TodoDraft, 'parentId'>> & { id?: number }
 }
 
 export interface AttachmentSummary {
@@ -79,6 +81,7 @@ function AddTodoForm({
   uploadProgress,
   attachmentError = '',
   maxFileSizeBytes = 10 * 1024 * 1024,
+  onAttachmentDeleted,
   onCancel,
   isEditMode = false,
   initialDraft,
@@ -90,8 +93,10 @@ function AddTodoForm({
   const [notes, setNotes] = useState<string>(initialDraft?.notes ?? '')
   const [tags, setTags] = useState<string[]>(initialDraft?.tags ?? [])
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [existingAttachments, setExistingAttachments] = useState<AttachmentSummary[]>(attachments)
   const [formError, setFormError] = useState<string>('')
   const [fileError, setFileError] = useState<string>('')
+  const [attachmentActionError, setAttachmentActionError] = useState<string>('')
 
   useEffect(() => {
     setName(initialDraft?.name ?? '')
@@ -102,7 +107,72 @@ function AddTodoForm({
     setSelectedFiles([])
     setFormError('')
     setFileError('')
+    setAttachmentActionError('')
   }, [initialDraft, isEditMode])
+
+  useEffect(() => {
+    setExistingAttachments(attachments)
+  }, [attachments])
+
+  const handleDownloadAttachment = async (attachment: AttachmentSummary): Promise<void> => {
+    const todoId = initialDraft?.id
+    if (!todoId) {
+      return
+    }
+
+    setAttachmentActionError('')
+
+    try {
+      const response = await fetchWithAuth(`/api/todos/${todoId}/attachments/${attachment.id}`)
+      if (!response.ok) {
+        throw new Error(t('errors.downloadAttachment'))
+      }
+
+      const blob = await response.blob()
+      const downloadUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = attachment.fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(downloadUrl)
+    } catch (downloadError) {
+      console.error(downloadError)
+      setAttachmentActionError(t('errors.downloadAttachmentMessage'))
+    }
+  }
+
+  const handleDeleteAttachment = async (attachmentId: number): Promise<void> => {
+    const todoId = initialDraft?.id
+    if (!todoId) {
+      return
+    }
+
+    if (!window.confirm(t('todoItem.confirmDeleteAttachment'))) {
+      return
+    }
+
+    setAttachmentActionError('')
+
+    try {
+      const response = await fetchWithAuth(`/api/todos/${todoId}/attachments/${attachmentId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error(t('errors.deleteAttachment'))
+      }
+
+      setExistingAttachments((previous) =>
+        previous.filter((attachment) => attachment.id !== attachmentId),
+      )
+      onAttachmentDeleted?.(attachmentId)
+    } catch (deleteError) {
+      console.error(deleteError)
+      setAttachmentActionError(t('errors.deleteAttachmentMessage'))
+    }
+  }
 
   const handleFilesChange = (event: ChangeEvent<HTMLInputElement>): void => {
     const files = Array.from(event.target.files ?? [])
@@ -278,14 +348,36 @@ function AddTodoForm({
         </div>
         <div className="todo-field">
           <p className="todo-field-label">{t('form.attachmentList')}</p>
-          {attachments.length === 0 ? (
+          {existingAttachments.length === 0 ? (
             <p className="todo-field-hint">{t('form.noAttachments')}</p>
           ) : (
             <ul className="todo-file-list">
-              {attachments.map((attachment) => (
+              {existingAttachments.map((attachment) => (
                 <li key={attachment.id} className="todo-file-list-item">
-                  <span className="todo-file-name">{attachment.fileName}</span>
-                  <span className="todo-file-size">{formatFileSize(attachment.fileSize)}</span>
+                  <span className="todo-file-name" title={attachment.fileName}>
+                    {attachment.fileName}
+                  </span>
+                  <span className="todo-file-size">
+                    {formatFileSize(attachment.fileSize)}
+                  </span>
+                  <div className="todo-attachment-actions">
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void handleDownloadAttachment(attachment)}
+                      disabled={isSubmitting}
+                    >
+                      {t('todoItem.downloadAttachment')}
+                    </button>
+                    <button
+                      className="secondary-button todo-attachment-delete"
+                      type="button"
+                      onClick={() => void handleDeleteAttachment(attachment.id)}
+                      disabled={isSubmitting}
+                    >
+                      {t('todoItem.deleteAttachment')}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -320,6 +412,7 @@ function AddTodoForm({
       {formError ? <p className="form-error">{formError}</p> : null}
       {fileError ? <p className="form-error">{fileError}</p> : null}
       {attachmentError ? <p className="form-error">{attachmentError}</p> : null}
+      {attachmentActionError ? <p className="form-error">{attachmentActionError}</p> : null}
     </form>
   )
 }

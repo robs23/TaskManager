@@ -570,6 +570,12 @@
   gap: 0.3rem;
 }
 
+.todo-attachment-indicator {
+  flex-shrink: 0;
+  font-size: 0.85em;
+  line-height: 1;
+}
+
 .todo-tag-list {
   min-width: 0;
   display: inline-flex;
@@ -771,6 +777,17 @@
   background: #16a34a;
   border-color: #16a34a;
   color: #ffffff;
+}
+
+.todo-toggle.is-blocked:not(.is-completed) {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.todo-toggle.is-blocked:not(:disabled):hover {
+  border-color: #d97706;
+  background: #fef3c7;
 }
 
 .todo-compact-action {
@@ -1008,6 +1025,25 @@
   flex-direction: column;
   gap: 0.45rem;
   border-left: 1px dashed #cbd5e1;
+}
+
+.todo-highlighted .todo-item {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: #ffffff;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.28);
+  z-index: 1000;
 }
 
 @media (max-width: 640px) {

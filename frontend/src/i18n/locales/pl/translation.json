@@ -89,6 +89,7 @@
     "markAsComplete": "Oznacz jako ukończone",
     "markAsIncomplete": "Oznacz jako nieukończone",
     "due": "Termin",
+    "hasAttachments": "Ma załączniki",
     "expandSubtasks": "Rozwiń podzadania",
     "collapseSubtasks": "Zwiń podzadania",
     "dragHandle": "Przeciągnij zadanie",
@@ -121,6 +122,9 @@
   "modal": {
     "createTodo": "Utwórz zadanie",
     "editTodo": "Edytuj zadanie"
+  },
+  "toast": {
+    "blockedByDependencies": "Nie można ukończyć: najpierw zakończ wszystkie zależności"
   }
 }
 
