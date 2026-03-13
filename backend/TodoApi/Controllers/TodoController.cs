@@ -43,11 +43,38 @@ public class TodoController : ControllerBase
             .Where(t => t.UserId == userId)
             .Include(t => t.Children)
             .Include(t => t.Dependencies)
+            .Include(t => t.RelatedTodos)
+            .Include(t => t.RelatedByTodos)
             .Include(t => t.Tags)
             .Include(t => t.Attachments)
             .ToListAsync();
         var response = todos.Select(ToResponse).ToList();
         return Ok(response);
+    }
+
+    [HttpGet("search")]
+    public async Task<IActionResult> SearchTodos([FromQuery] string? q)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var normalizedQuery = q?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedQuery) || normalizedQuery.Length < 2)
+        {
+            return Ok(Array.Empty<TodoSearchResult>());
+        }
+
+        var loweredQuery = normalizedQuery.ToLowerInvariant();
+        var results = await _context.Todos.AsNoTracking()
+            .Where(t => t.UserId == userId && t.Name.ToLower().Contains(loweredQuery))
+            .OrderBy(t => t.Name)
+            .Take(20)
+            .Select(t => new TodoSearchResult(t.Id, t.Name))
+            .ToListAsync();
+
+        return Ok(results);
     }
 
     [HttpGet("{id:int}")]
@@ -61,6 +88,8 @@ public class TodoController : ControllerBase
         var todo = await _context.Todos.AsNoTracking()
             .Include(t => t.Children)
             .Include(t => t.Dependencies)
+            .Include(t => t.RelatedTodos)
+            .Include(t => t.RelatedByTodos)
             .Include(t => t.Tags)
             .Include(t => t.Attachments)
             .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
@@ -84,11 +113,19 @@ public class TodoController : ControllerBase
         public int? ParentId { get; set; }
         public bool Doable { get; set; }
         public List<TodoDependencyResponse> Dependencies { get; set; } = new();
+        public List<TodoRelatedResponse> RelatedTodos { get; set; } = new();
         public List<string> Tags { get; set; } = new();
         public List<AttachmentResponse> Attachments { get; set; } = new();
     }
 
     public sealed class TodoDependencyResponse
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public bool IsCompleted { get; set; }
+    }
+
+    public sealed class TodoRelatedResponse
     {
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
@@ -113,6 +150,8 @@ public class TodoController : ControllerBase
         public DateTime UploadedAt { get; set; }
         public string ContentType { get; set; } = string.Empty;
     }
+
+    public sealed record TodoSearchResult(int Id, string Name);
 
     public sealed class CreateTodoRequest
     {
@@ -432,6 +471,77 @@ public class TodoController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("{id:int}/related/{relatedId:int}")]
+    public async Task<IActionResult> AddRelatedTodo(int id, int relatedId)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        if (id == relatedId)
+        {
+            return BadRequest("A todo cannot be related to itself.");
+        }
+
+        var todo = await _context.Todos
+            .Include(t => t.RelatedTodos)
+            .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
+        if (todo is null)
+        {
+            return NotFound();
+        }
+
+        var relatedTodo = await _context.Todos
+            .FirstOrDefaultAsync(t => t.Id == relatedId && t.UserId == userId);
+        if (relatedTodo is null)
+        {
+            return NotFound();
+        }
+
+        if (!todo.RelatedTodos.Any(related => related.Id == relatedId))
+        {
+            todo.RelatedTodos.Add(relatedTodo);
+            await _context.SaveChangesAsync();
+        }
+
+        return NoContent();
+    }
+
+    [HttpDelete("{id:int}/related/{relatedId:int}")]
+    public async Task<IActionResult> RemoveRelatedTodo(int id, int relatedId)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var todo = await _context.Todos
+            .Include(t => t.RelatedTodos)
+            .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
+        if (todo is null)
+        {
+            return NotFound();
+        }
+
+        var relatedTodo = await _context.Todos
+            .Include(t => t.RelatedTodos)
+            .FirstOrDefaultAsync(t => t.Id == relatedId && t.UserId == userId);
+        if (relatedTodo is null)
+        {
+            return NotFound();
+        }
+
+        var changed = todo.RelatedTodos.Remove(relatedTodo);
+        changed = relatedTodo.RelatedTodos.Remove(todo) || changed;
+        if (changed)
+        {
+            await _context.SaveChangesAsync();
+        }
+
+        return NoContent();
+    }
+
     [HttpPost("{id:int}/tags")]
     public async Task<ActionResult<TodoResponse>> AddTag(int id, [FromBody] AddTagRequest request)
     {
@@ -553,6 +663,18 @@ public class TodoController : ControllerBase
                     Name = dependency.Name,
                     IsCompleted = dependency.IsCompleted
                 })
+                .ToList(),
+            RelatedTodos = todo.RelatedTodos
+                .Concat(todo.RelatedByTodos)
+                .GroupBy(related => related.Id)
+                .Select(group => group.First())
+                .Select(related => new TodoRelatedResponse
+                {
+                    Id = related.Id,
+                    Name = related.Name,
+                    IsCompleted = related.IsCompleted
+                })
+                .OrderBy(related => related.Name)
                 .ToList(),
             Tags = todo.Tags
                 .Select(tag => tag.Name)

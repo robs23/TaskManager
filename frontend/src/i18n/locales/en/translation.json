@@ -48,6 +48,7 @@
     "details": "Details",
     "delete": "Delete",
     "remove": "Remove",
+    "removeRelated": "Remove",
     "addSubtask": "Add subtask"
   },
   "form": {
@@ -79,9 +80,11 @@
     "doable": "Doable",
     "parent": "Parent",
     "dependencies": "Dependencies",
+    "relatedTodos": "Related Todos",
     "addDependency": "Add dependency",
     "selectTodo": "Select todo",
     "noParent": "No parent",
+    "noRelatedTodos": "No related todos",
     "emptyState": "No todos yet. Add your first task above.",
     "completeDependenciesToStart": "Complete dependencies to start this task."
   },
@@ -98,6 +101,10 @@
     "deleteAttachment": "Delete",
     "confirmDeleteAttachment": "Delete this attachment?"
   },
+  "search": {
+    "typeToSearch": "Type to search todos",
+    "noResults": "No matching todos"
+  },
   "errors": {
     "fetchTodos": "Failed to fetch todos.",
     "loadTodos": "Unable to load todos right now. Please try again.",
@@ -109,6 +116,10 @@
     "addDependencyMessage": "Unable to add dependency. Please try again.",
     "removeDependency": "Failed to remove dependency.",
     "removeDependencyMessage": "Unable to remove dependency. Please try again.",
+    "addRelated": "Failed to add related todo.",
+    "addRelatedMessage": "Unable to add related todo. Please try again.",
+    "removeRelated": "Failed to remove related todo.",
+    "removeRelatedMessage": "Unable to remove related todo. Please try again.",
     "syncTags": "Unable to sync tags. Please try again.",
     "uploadAttachment": "Unable to upload attachment. Please try again.",
     "attachmentTooLarge": "One or more selected files exceed the 10 MB limit.",

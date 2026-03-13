@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import TodoSearchSelect from './TodoSearchSelect'
 
 interface TodoDependencySummary {
+  id: number
+  name: string
+  isCompleted: boolean
+}
+
+interface TodoRelatedSummary {
   id: number
   name: string
   isCompleted: boolean
@@ -27,6 +34,7 @@ export interface Todo {
   tags: string[]
   doable: boolean
   dependencies: TodoDependencySummary[]
+  relatedTodos: TodoRelatedSummary[]
   attachments: AttachmentSummary[]
   children: Todo[]
 }
@@ -45,6 +53,8 @@ export interface TodoItemProps {
   onToggleCollapsed: (todoId: number) => void
   onAddDependency: (todo: Todo, dependsOnId: number) => Promise<void>
   onRemoveDependency: (todo: Todo, dependsOnId: number) => Promise<void>
+  onAddRelated: (todo: Todo, relatedTodoId: number) => Promise<void>
+  onRemoveRelated: (todo: Todo, relatedTodoId: number) => Promise<void>
   onDownloadAttachment: (todoId: number, attachment: AttachmentSummary) => Promise<void>
   onDeleteAttachment: (todoId: number, attachmentId: number) => Promise<void>
   draggingTodoId: number | null
@@ -89,6 +99,8 @@ function TodoItem({
   onToggleCollapsed,
   onAddDependency,
   onRemoveDependency,
+  onAddRelated,
+  onRemoveRelated,
   onDownloadAttachment,
   onDeleteAttachment,
   draggingTodoId,
@@ -107,18 +119,14 @@ function TodoItem({
 }: TodoItemProps) {
   const { t, i18n } = useTranslation()
   const maxVisibleTags = 3
-  const [selectedDependencyId, setSelectedDependencyId] = useState<string>('')
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
   const [isDraggingHandle, setIsDraggingHandle] = useState<boolean>(false)
   const invalidParents = descendantMap.get(todo.id) ?? new Set<number>()
   const availableParents = allTodos.filter(
     (option) => option.id !== todo.id && (!invalidParents.has(option.id) || option.id === todo.parentId),
   )
-  const dependencyOptions = allTodos.filter(
-    (option) =>
-      option.id !== todo.id &&
-      !(todo.dependencies ?? []).some((dependency) => dependency.id === option.id),
-  )
+  const dependencyExcludeIds = [todo.id, ...(todo.dependencies ?? []).map((dependency) => dependency.id)]
+  const relatedExcludeIds = [todo.id, ...(todo.relatedTodos ?? []).map((relatedTodo) => relatedTodo.id)]
   const isBlocked = !todo.doable && !todo.isCompleted
   const hasChildren = todo.children.length > 0
   const isHighlighted = highlightedTodoIds.has(todo.id)
@@ -381,6 +389,35 @@ function TodoItem({
               ) : null}
               {isBlocked ? <p className="todo-helper">{t('common.completeDependenciesToStart')}</p> : null}
             </div>
+            <div className="todo-dependencies">
+              <p className="todo-detail">
+                <span className="todo-detail-label">{t('common.relatedTodos')}:</span>{' '}
+                {(todo.relatedTodos ?? []).length === 0 ? t('common.noRelatedTodos') : ''}
+              </p>
+              {(todo.relatedTodos ?? []).length > 0 ? (
+                <ul className="dependency-list">
+                  {todo.relatedTodos.map((relatedTodo) => (
+                    <li
+                      key={relatedTodo.id}
+                      className={`dependency-item${relatedTodo.isCompleted ? ' is-completed' : ''}`}
+                    >
+                      <span>{relatedTodo.name}</span>
+                      <span className={`dependency-status${relatedTodo.isCompleted ? ' is-completed' : ''}`}>
+                        {relatedTodo.isCompleted ? t('common.complete') : t('common.pending')}
+                      </span>
+                      <button
+                        className="dependency-remove"
+                        type="button"
+                        onClick={() => void onRemoveRelated(todo, relatedTodo.id)}
+                        disabled={isProcessing}
+                      >
+                        {t('buttons.removeRelated')}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
             <div className="todo-attachments">
               <p className="todo-detail">
                 <span className="todo-detail-label">{t('form.attachments')}:</span>{' '}
@@ -458,38 +495,33 @@ function TodoItem({
               </select>
             </div>
             <div className="todo-field todo-field--compact">
-              <label className="todo-field-label" htmlFor={`todo-dependency-${todo.id}`}>
+              <label className="todo-field-label">
                 {t('common.addDependency')}
               </label>
               <div className="todo-dependency-controls">
-                <select
-                  id={`todo-dependency-${todo.id}`}
-                  className="todo-input todo-select"
-                  value={selectedDependencyId}
-                  onChange={(event) => setSelectedDependencyId(event.target.value)}
-                  disabled={isProcessing}
-                >
-                  <option value="">{t('common.selectTodo')}</option>
-                  {dependencyOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => {
-                    const parsed = parseParentId(selectedDependencyId)
-                    if (parsed !== null) {
-                      void onAddDependency(todo, parsed)
-                      setSelectedDependencyId('')
-                    }
+                <TodoSearchSelect
+                  selectedItems={[]}
+                  onSelect={(item) => {
+                    void onAddDependency(todo, item.id)
                   }}
-                  disabled={isProcessing || !selectedDependencyId}
-                >
-                  {t('buttons.add')}
-                </button>
+                  onDeselect={() => {}}
+                  excludeIds={dependencyExcludeIds}
+                  placeholder={t('common.selectTodo')}
+                />
+              </div>
+            </div>
+            <div className="todo-field todo-field--compact">
+              <label className="todo-field-label">{t('common.relatedTodos')}</label>
+              <div className="todo-dependency-controls">
+                <TodoSearchSelect
+                  selectedItems={[]}
+                  onSelect={(item) => {
+                    void onAddRelated(todo, item.id)
+                  }}
+                  onDeselect={() => {}}
+                  excludeIds={relatedExcludeIds}
+                  placeholder={t('common.selectTodo')}
+                />
               </div>
             </div>
           </div>
@@ -510,6 +542,8 @@ function TodoItem({
               onToggleCollapsed={onToggleCollapsed}
               onAddDependency={onAddDependency}
               onRemoveDependency={onRemoveDependency}
+              onAddRelated={onAddRelated}
+              onRemoveRelated={onRemoveRelated}
               onDownloadAttachment={onDownloadAttachment}
               onDeleteAttachment={onDeleteAttachment}
               draggingTodoId={draggingTodoId}

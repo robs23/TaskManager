@@ -56,6 +56,26 @@ public class TodoDbContext : DbContext
                 });
 
         modelBuilder.Entity<Todo>()
+            .HasMany(t => t.RelatedTodos)
+            .WithMany(t => t.RelatedByTodos)
+            .UsingEntity<Dictionary<string, object>>(
+                "TodoRelated",
+                right => right.HasOne<Todo>()
+                    .WithMany()
+                    .HasForeignKey("RelatedTodoId")
+                    .OnDelete(DeleteBehavior.Cascade),
+                left => left.HasOne<Todo>()
+                    .WithMany()
+                    .HasForeignKey("TodoId")
+                    .OnDelete(DeleteBehavior.Cascade),
+                join =>
+                {
+                    join.HasKey("TodoId", "RelatedTodoId");
+                    join.ToTable(tableBuilder =>
+                        tableBuilder.HasCheckConstraint("CK_TodoRelated_NoSelf", "TodoId <> RelatedTodoId"));
+                });
+
+        modelBuilder.Entity<Todo>()
             .HasMany(t => t.Tags)
             .WithMany(t => t.TodoItems)
             .UsingEntity<Dictionary<string, object>>(

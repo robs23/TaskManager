@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import './App.css'
 import AddTodoForm from './components/AddTodoForm'
-import type { ParentOption, TodoDraft } from './components/AddTodoForm'
+import type { TodoDraft } from './components/AddTodoForm'
 import AuthForm from './components/AuthForm'
 import Header from './components/Header'
 import Modal from './components/Modal'
@@ -15,6 +15,12 @@ const API_BASE = '/api/todos'
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 
 interface TodoDependencySummary {
+  id: number
+  name: string
+  isCompleted: boolean
+}
+
+interface TodoRelatedSummary {
   id: number
   name: string
   isCompleted: boolean
@@ -44,12 +50,14 @@ interface TodoApiResponse {
   parentId: number | null
   doable?: boolean
   dependencies?: TodoDependencySummary[]
+  relatedTodos?: TodoRelatedSummary[]
   attachments?: AttachmentSummary[]
 }
 
-interface Todo extends Omit<TodoApiResponse, 'dependencies'> {
+interface Todo extends Omit<TodoApiResponse, 'dependencies' | 'relatedTodos'> {
   doable: boolean
   dependencies: TodoDependencySummary[]
+  relatedTodos: TodoRelatedSummary[]
   tags: string[]
   attachments: AttachmentSummary[]
   children: Todo[]
@@ -131,9 +139,18 @@ const hydrateTodo = (todo: TodoApiResponse): Todo => {
       }))
     : []
 
+  const relatedTodos = Array.isArray(todo.relatedTodos)
+    ? todo.relatedTodos.map((relatedTodo) => ({
+        id: relatedTodo.id,
+        name: relatedTodo.name,
+        isCompleted: Boolean(relatedTodo.isCompleted),
+      }))
+    : []
+
   return {
     ...todo,
     dependencies,
+    relatedTodos,
     tags,
     attachments,
     doable: deriveDoable(dependencies),
@@ -299,9 +316,9 @@ function App() {
     () => (editingTodoId === null ? null : todos.find((todo) => todo.id === editingTodoId) ?? null),
     [editingTodoId, todos],
   )
-  const parentOptions = useMemo<ParentOption[]>(
-    () => todos.map((todo) => ({ id: todo.id, name: todo.name })),
-    [todos],
+  const selectedParentName = useMemo(
+    () => todos.find((todo) => todo.id === selectedParentId)?.name ?? '',
+    [selectedParentId, todos],
   )
   const visibleRoots = useMemo(() => filterTodoHierarchy(roots, showOnlyDoable), [roots, showOnlyDoable])
 
@@ -673,6 +690,60 @@ function App() {
     } catch (dependencyError) {
       console.error(dependencyError)
       setError(t('errors.removeDependencyMessage'))
+    } finally {
+      setProcessing(todo.id, false)
+    }
+  }
+
+  const handleAddRelated = async (
+    todo: Todo,
+    relatedTodoId: number,
+  ): Promise<void> => {
+    if (!relatedTodoId) {
+      return
+    }
+
+    setProcessing(todo.id, true)
+    setError('')
+
+    try {
+      const response = await fetchWithAuth(`${API_BASE}/${todo.id}/related/${relatedTodoId}`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        throw new Error(t('errors.addRelated'))
+      }
+
+      await loadTodos()
+    } catch (relatedError) {
+      console.error(relatedError)
+      setError(t('errors.addRelatedMessage'))
+    } finally {
+      setProcessing(todo.id, false)
+    }
+  }
+
+  const handleRemoveRelated = async (
+    todo: Todo,
+    relatedTodoId: number,
+  ): Promise<void> => {
+    setProcessing(todo.id, true)
+    setError('')
+
+    try {
+      const response = await fetchWithAuth(`${API_BASE}/${todo.id}/related/${relatedTodoId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error(t('errors.removeRelated'))
+      }
+
+      await loadTodos()
+    } catch (relatedError) {
+      console.error(relatedError)
+      setError(t('errors.removeRelatedMessage'))
     } finally {
       setProcessing(todo.id, false)
     }
@@ -1067,8 +1138,8 @@ function App() {
             <AddTodoForm
               onSubmit={handleSubmitTodo}
               isSubmitting={isSubmitting}
-              parentOptions={parentOptions}
               parentId={selectedParentId}
+              parentName={selectedParentName}
               onParentChange={setSelectedParentId}
               attachments={formAttachments}
               uploadProgress={uploadProgress}
@@ -1116,6 +1187,8 @@ function App() {
             onToggleCollapsed={handleToggleCollapsed}
             onAddDependency={handleAddDependency}
             onRemoveDependency={handleRemoveDependency}
+            onAddRelated={handleAddRelated}
+            onRemoveRelated={handleRemoveRelated}
             onDownloadAttachment={handleDownloadAttachment}
             onDeleteAttachment={handleDeleteAttachment}
             draggingTodoId={draggingTodoId}

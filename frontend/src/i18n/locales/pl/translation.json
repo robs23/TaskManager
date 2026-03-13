@@ -48,6 +48,7 @@
     "details": "Szczegóły",
     "delete": "Usuń",
     "remove": "Usuń",
+    "removeRelated": "Usuń",
     "addSubtask": "Dodaj podzadanie"
   },
   "form": {
@@ -79,9 +80,11 @@
     "doable": "Wykonalne",
     "parent": "Nadrzędne",
     "dependencies": "Zależności",
+    "relatedTodos": "Powiązane zadania",
     "addDependency": "Dodaj zależność",
     "selectTodo": "Wybierz zadanie",
     "noParent": "Brak nadrzędnego",
+    "noRelatedTodos": "Brak powiązanych zadań",
     "emptyState": "Brak zadań. Dodaj pierwsze zadanie powyżej.",
     "completeDependenciesToStart": "Ukończ zależności, aby rozpocząć to zadanie."
   },
@@ -98,6 +101,10 @@
     "deleteAttachment": "Usuń",
     "confirmDeleteAttachment": "Usunąć ten załącznik?"
   },
+  "search": {
+    "typeToSearch": "Wpisz, aby wyszukać zadania",
+    "noResults": "Brak pasujących zadań"
+  },
   "errors": {
     "fetchTodos": "Nie udało się pobrać zadań.",
     "loadTodos": "Nie można teraz wczytać zadań. Spróbuj ponownie.",
@@ -109,6 +116,10 @@
     "addDependencyMessage": "Nie można dodać zależności. Spróbuj ponownie.",
     "removeDependency": "Nie udało się usunąć zależności.",
     "removeDependencyMessage": "Nie można usunąć zależności. Spróbuj ponownie.",
+    "addRelated": "Nie udało się dodać powiązanego zadania.",
+    "addRelatedMessage": "Nie można dodać powiązanego zadania. Spróbuj ponownie.",
+    "removeRelated": "Nie udało się usunąć powiązanego zadania.",
+    "removeRelatedMessage": "Nie można usunąć powiązanego zadania. Spróbuj ponownie.",
     "syncTags": "Nie można zsynchronizować tagów. Spróbuj ponownie.",
     "uploadAttachment": "Nie można przesłać załącznika. Spróbuj ponownie.",
     "attachmentTooLarge": "Co najmniej jeden wybrany plik przekracza limit 10 MB.",

@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { fetchWithAuth } from '../api/fetchWithAuth'
 import TagInput from './TagInput'
+import TodoSearchSelect from './TodoSearchSelect'
 
 export interface TodoDraft {
   name: string
@@ -14,16 +15,11 @@ export interface TodoDraft {
   files: File[]
 }
 
-export interface ParentOption {
-  id: number
-  name: string
-}
-
 export interface AddTodoFormProps {
   onSubmit: (todoDraft: TodoDraft) => Promise<boolean>
   isSubmitting: boolean
-  parentOptions: ParentOption[]
   parentId: number | null
+  parentName?: string
   onParentChange: (parentId: number | null) => void
   attachments?: AttachmentSummary[]
   uploadProgress?: UploadProgress
@@ -32,7 +28,7 @@ export interface AddTodoFormProps {
   onAttachmentDeleted?: (attachmentId: number) => void
   onCancel?: () => void
   isEditMode?: boolean
-  initialDraft?: Partial<Omit<TodoDraft, 'parentId'>> & { id?: number }
+  initialDraft?: Partial<Omit<TodoDraft, 'parentId'>> & { id?: number; parentName?: string }
 }
 
 export interface AttachmentSummary {
@@ -50,15 +46,6 @@ export interface UploadProgress {
   isUploading: boolean
 }
 
-const parseParentId = (value: string): number | null => {
-  if (!value) {
-    return null
-  }
-
-  const parsed = Number(value)
-  return Number.isNaN(parsed) ? null : parsed
-}
-
 const formatFileSize = (bytes: number): string => {
   if (bytes < 1024) {
     return `${bytes} B`
@@ -74,8 +61,8 @@ const formatFileSize = (bytes: number): string => {
 function AddTodoForm({
   onSubmit,
   isSubmitting,
-  parentOptions,
   parentId,
+  parentName,
   onParentChange,
   attachments = [],
   uploadProgress,
@@ -91,6 +78,9 @@ function AddTodoForm({
   const [description, setDescription] = useState<string>(initialDraft?.description ?? '')
   const [deadline, setDeadline] = useState<string>(initialDraft?.deadline ?? '')
   const [notes, setNotes] = useState<string>(initialDraft?.notes ?? '')
+  const [selectedParentName, setSelectedParentName] = useState<string>(
+    parentName ?? initialDraft?.parentName ?? '',
+  )
   const [tags, setTags] = useState<string[]>(initialDraft?.tags ?? [])
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [existingAttachments, setExistingAttachments] = useState<AttachmentSummary[]>(attachments)
@@ -103,12 +93,24 @@ function AddTodoForm({
     setDescription(initialDraft?.description ?? '')
     setDeadline(initialDraft?.deadline ?? '')
     setNotes(initialDraft?.notes ?? '')
+    setSelectedParentName(parentName ?? initialDraft?.parentName ?? '')
     setTags(initialDraft?.tags ?? [])
     setSelectedFiles([])
     setFormError('')
     setFileError('')
     setAttachmentActionError('')
-  }, [initialDraft, isEditMode])
+  }, [initialDraft, isEditMode, parentName])
+
+  useEffect(() => {
+    if (parentId === null) {
+      setSelectedParentName('')
+      return
+    }
+
+    if (parentName) {
+      setSelectedParentName(parentName)
+    }
+  }, [parentId, parentName])
 
   useEffect(() => {
     setExistingAttachments(attachments)
@@ -260,23 +262,23 @@ function AddTodoForm({
           />
         </div>
         <div className="todo-field">
-          <label className="todo-field-label" htmlFor="todo-parent">
+          <label className="todo-field-label">
             {t('form.parentTask')}
           </label>
-          <select
-            id="todo-parent"
-            className="todo-input todo-select"
-            value={parentId ? String(parentId) : ''}
-            onChange={(event) => onParentChange(parseParentId(event.target.value))}
-            disabled={isSubmitting}
-          >
-            <option value="">{t('form.noParentTopLevel')}</option>
-            {parentOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.name}
-              </option>
-            ))}
-          </select>
+          <TodoSearchSelect
+            selectedItems={parentId ? [{ id: parentId, name: selectedParentName }] : []}
+            onSelect={(item) => {
+              onParentChange(item.id)
+              setSelectedParentName(item.name)
+            }}
+            onDeselect={() => {
+              onParentChange(null)
+              setSelectedParentName('')
+            }}
+            excludeIds={initialDraft?.id ? [initialDraft.id] : []}
+            singleSelect
+            placeholder={t('form.noParentTopLevel')}
+          />
         </div>
       </div>
       <div className="todo-controls todo-controls--stacked">

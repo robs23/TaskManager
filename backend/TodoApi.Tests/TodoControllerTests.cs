@@ -31,6 +31,7 @@ public class TodoControllerTests
         var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoResponse>>(okResult.Value).ToList();
         Assert.Equal(2, todos.Count());
         Assert.All(todos, todo => Assert.Empty(todo.Attachments));
+        Assert.All(todos, todo => Assert.Empty(todo.RelatedTodos));
     }
 
     [Fact]
@@ -51,6 +52,76 @@ public class TodoControllerTests
         var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoResponse>>(okResult.Value).ToList();
         Assert.Single(todos);
         Assert.Equal("Mine", todos[0].Name);
+    }
+
+    [Fact]
+    public async Task SearchTodos_ReturnsEmptyArrayWhenQueryIsNullOrTooShort()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        context.Todos.Add(new Todo { UserId = TestUserId, Name = "Alpha", CreatedAt = DateTime.UtcNow });
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var nullQueryResult = await controller.SearchTodos(null);
+        var shortQueryResult = await controller.SearchTodos("a");
+
+        var nullQueryOk = Assert.IsType<OkObjectResult>(nullQueryResult);
+        var nullQueryTodos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoSearchResult>>(nullQueryOk.Value).ToList();
+        Assert.Empty(nullQueryTodos);
+
+        var shortQueryOk = Assert.IsType<OkObjectResult>(shortQueryResult);
+        var shortQueryTodos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoSearchResult>>(shortQueryOk.Value).ToList();
+        Assert.Empty(shortQueryTodos);
+    }
+
+    [Fact]
+    public async Task SearchTodos_FiltersByUserAndMatchesCaseInsensitiveContains()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        context.Todos.AddRange(
+            new Todo { UserId = TestUserId, Name = "Read Docs", CreatedAt = DateTime.UtcNow },
+            new Todo { UserId = TestUserId, Name = "BREAD", CreatedAt = DateTime.UtcNow },
+            new Todo { UserId = TestUserId, Name = "Write tests", CreatedAt = DateTime.UtcNow },
+            new Todo { UserId = 2, Name = "Bread from another user", CreatedAt = DateTime.UtcNow });
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.SearchTodos("eaD");
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoSearchResult>>(okResult.Value).ToList();
+        Assert.Equal(2, todos.Count);
+        Assert.Equal(new[] { "BREAD", "Read Docs" }, todos.Select(todo => todo.Name).ToArray());
+    }
+
+    [Fact]
+    public async Task SearchTodos_OrdersAlphabeticallyAndLimitsToTwentyResults()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        for (var i = 30; i >= 1; i--)
+        {
+            context.Todos.Add(new Todo
+            {
+                UserId = TestUserId,
+                Name = $"Alpha-{i:00}",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.SearchTodos("alp");
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoSearchResult>>(okResult.Value).ToList();
+        Assert.Equal(20, todos.Count);
+        Assert.Equal("Alpha-01", todos.First().Name);
+        Assert.Equal("Alpha-20", todos.Last().Name);
+        Assert.True(todos.Zip(todos.Skip(1), (left, right) => string.CompareOrdinal(left.Name, right.Name) <= 0).All(isOrdered => isOrdered));
     }
 
     [Fact]
@@ -411,6 +482,63 @@ public class TodoControllerTests
     }
 
     [Fact]
+    public async Task GetTodo_IncludesRelatedTodosSymmetrically()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var main = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        var outgoing = new Todo { UserId = TestUserId, Name = "Outgoing", CreatedAt = DateTime.UtcNow };
+        var incoming = new Todo { UserId = TestUserId, Name = "Incoming", CreatedAt = DateTime.UtcNow };
+        var duplicateBothWays = new Todo { UserId = TestUserId, Name = "Both ways", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(main, outgoing, incoming, duplicateBothWays);
+        await context.SaveChangesAsync();
+
+        main.RelatedTodos.Add(outgoing);
+        incoming.RelatedTodos.Add(main);
+        main.RelatedTodos.Add(duplicateBothWays);
+        duplicateBothWays.RelatedTodos.Add(main);
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.GetTodo(main.Id);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var fetched = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
+        Assert.Equal(3, fetched.RelatedTodos.Count);
+        Assert.Contains(fetched.RelatedTodos, item => item.Id == outgoing.Id);
+        Assert.Contains(fetched.RelatedTodos, item => item.Id == incoming.Id);
+        Assert.Contains(fetched.RelatedTodos, item => item.Id == duplicateBothWays.Id);
+    }
+
+    [Fact]
+    public async Task GetTodos_IncludesRelatedTodosSymmetrically()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var main = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        var outgoing = new Todo { UserId = TestUserId, Name = "Outgoing", CreatedAt = DateTime.UtcNow };
+        var incoming = new Todo { UserId = TestUserId, Name = "Incoming", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(main, outgoing, incoming);
+        await context.SaveChangesAsync();
+
+        main.RelatedTodos.Add(outgoing);
+        incoming.RelatedTodos.Add(main);
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.GetTodos();
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoResponse>>(okResult.Value).ToList();
+        var fetchedMain = todos.Single(item => item.Id == main.Id);
+        Assert.Equal(2, fetchedMain.RelatedTodos.Count);
+        Assert.Contains(fetchedMain.RelatedTodos, item => item.Id == outgoing.Id);
+        Assert.Contains(fetchedMain.RelatedTodos, item => item.Id == incoming.Id);
+    }
+
+    [Fact]
     public async Task GetTodos_IncludesAttachmentsPerTodo()
     {
         var databaseName = Guid.NewGuid().ToString();
@@ -654,6 +782,71 @@ public class TodoControllerTests
             .Include(t => t.Dependencies)
             .FirstAsync(t => t.Id == todo.Id);
         Assert.Empty(updated.Dependencies);
+    }
+
+    [Fact]
+    public async Task AddRelatedTodo_AddsRelatedLink()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        var related = new Todo { UserId = TestUserId, Name = "Related", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(todo, related);
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.AddRelatedTodo(todo.Id, related.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        var updated = await context.Todos
+            .Include(t => t.RelatedTodos)
+            .FirstAsync(t => t.Id == todo.Id);
+        Assert.Contains(updated.RelatedTodos, item => item.Id == related.Id);
+    }
+
+    [Fact]
+    public async Task AddRelatedTodo_ReturnsBadRequestForSelfRelation()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.AddRelatedTodo(todo.Id, todo.Id);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task RemoveRelatedTodo_RemovesBothDirectionsWhenPresent()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        var related = new Todo { UserId = TestUserId, Name = "Related", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(todo, related);
+        await context.SaveChangesAsync();
+
+        todo.RelatedTodos.Add(related);
+        related.RelatedTodos.Add(todo);
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.RemoveRelatedTodo(todo.Id, related.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        var updatedTodo = await context.Todos
+            .Include(t => t.RelatedTodos)
+            .FirstAsync(t => t.Id == todo.Id);
+        var updatedRelated = await context.Todos
+            .Include(t => t.RelatedTodos)
+            .FirstAsync(t => t.Id == related.Id);
+        Assert.Empty(updatedTodo.RelatedTodos);
+        Assert.Empty(updatedRelated.RelatedTodos);
     }
 
     [Fact]

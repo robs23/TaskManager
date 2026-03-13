@@ -16,6 +16,8 @@ interface TodoListProps {
   onToggleCollapsed: (todoId: number) => void
   onAddDependency: (todo: Todo, dependsOnId: number) => Promise<void>
   onRemoveDependency: (todo: Todo, dependsOnId: number) => Promise<void>
+  onAddRelated: (todo: Todo, relatedTodoId: number) => Promise<void>
+  onRemoveRelated: (todo: Todo, relatedTodoId: number) => Promise<void>
   onDownloadAttachment: (todoId: number, attachment: Todo['attachments'][number]) => Promise<void>
   onDeleteAttachment: (todoId: number, attachmentId: number) => Promise<void>
   draggingTodoId: number | null
@@ -45,6 +47,8 @@ function TodoList({
   onToggleCollapsed,
   onAddDependency,
   onRemoveDependency,
+  onAddRelated,
+  onRemoveRelated,
   onDownloadAttachment,
   onDeleteAttachment,
   draggingTodoId,
@@ -109,6 +113,8 @@ function TodoList({
             onToggleCollapsed={onToggleCollapsed}
             onAddDependency={onAddDependency}
             onRemoveDependency={onRemoveDependency}
+            onAddRelated={onAddRelated}
+            onRemoveRelated={onRemoveRelated}
             onDownloadAttachment={onDownloadAttachment}
             onDeleteAttachment={onDeleteAttachment}
             draggingTodoId={draggingTodoId}

@@ -17,6 +17,8 @@ public class Todo
     public ICollection<Todo> Children { get; set; } = new List<Todo>();
     public ICollection<Todo> Dependencies { get; set; } = new List<Todo>();
     public ICollection<Todo> DependentTodos { get; set; } = new List<Todo>();
+    public ICollection<Todo> RelatedTodos { get; set; } = new List<Todo>();
+    public ICollection<Todo> RelatedByTodos { get; set; } = new List<Todo>();
     public ICollection<Tag> Tags { get; set; } = new List<Tag>();
     public ICollection<FileAttachment> Attachments { get; set; } = new List<FileAttachment>();
     public User? User { get; set; }
