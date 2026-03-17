@@ -6,6 +6,7 @@ import type { TodoDraft } from './components/AddTodoForm'
 import AuthForm from './components/AuthForm'
 import Header from './components/Header'
 import Modal from './components/Modal'
+import { FilterPanel, type FilterState } from './components/FilterPanel'
 import Toast from './components/Toast'
 import Toolbar from './components/Toolbar'
 import TodoList from './components/TodoList'
@@ -209,14 +210,41 @@ const buildTodoHierarchy = (
   return { roots, descendantMap }
 }
 
-const filterTodoHierarchy = (items: Todo[], showOnlyDoable: boolean): Todo[] => {
-  if (!showOnlyDoable) {
+const filterTodoHierarchy = (items: Todo[], filters: FilterState): Todo[] => {
+  const hasActiveFilter =
+    filters.showDoableOnly || filters.hideCompleted || filters.hasAttachmentsOnly || filters.dueDate !== null
+
+  if (!hasActiveFilter) {
     return items
   }
 
   const filterNodes = (nodes: Todo[]): Todo[] =>
     nodes
-      .filter((node) => node.doable)
+      .filter((node) => {
+        if (filters.showDoableOnly && !node.doable) {
+          return false
+        }
+
+        if (filters.hideCompleted && node.isCompleted) {
+          return false
+        }
+
+        if (filters.hasAttachmentsOnly && node.attachments.length === 0) {
+          return false
+        }
+
+        if (filters.dueDate !== null) {
+          if (node.deadline === null) {
+            return false
+          }
+
+          if (node.deadline.substring(0, 10) !== filters.dueDate) {
+            return false
+          }
+        }
+
+        return true
+      })
       .map((node) => ({
         ...node,
         children: filterNodes(node.children),
@@ -241,7 +269,12 @@ function App() {
   const [draggingTodoId, setDraggingTodoId] = useState<number | null>(null)
   const [activeDropTodoId, setActiveDropTodoId] = useState<number | null>(null)
   const [isRootDropActive, setIsRootDropActive] = useState<boolean>(false)
-  const [showOnlyDoable, setShowOnlyDoable] = useState<boolean>(false)
+  const [filters, setFilters] = useState<FilterState>({
+    showDoableOnly: false,
+    hideCompleted: false,
+    hasAttachmentsOnly: false,
+    dueDate: null,
+  })
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState>({
     total: 0,
     completed: 0,
@@ -320,7 +353,7 @@ function App() {
     () => todos.find((todo) => todo.id === selectedParentId)?.name ?? '',
     [selectedParentId, todos],
   )
-  const visibleRoots = useMemo(() => filterTodoHierarchy(roots, showOnlyDoable), [roots, showOnlyDoable])
+  const visibleRoots = useMemo(() => filterTodoHierarchy(roots, filters), [roots, filters])
 
   useEffect(() => {
     if (!showCreateForm) {
@@ -896,10 +929,6 @@ function App() {
     })
   }
 
-  const handleToggleDoableFilter = (): void => {
-    setShowOnlyDoable((previous) => !previous)
-  }
-
   const handleStartEdit = (todo: Todo): void => {
     setEditingTodoId(todo.id)
     setSelectedParentId(todo.parentId ?? null)
@@ -1107,14 +1136,7 @@ function App() {
           isCollapseToggleDisabled={parentTodoIds.length === 0}
           onToggleAllCollapsed={handleToggleAllCollapsed}
         >
-          <button
-            className={`toolbar-filter-button${showOnlyDoable ? ' is-active' : ''}`}
-            type="button"
-            onClick={handleToggleDoableFilter}
-            aria-pressed={showOnlyDoable}
-          >
-            {showOnlyDoable ? t('toolbar.showAll') : t('toolbar.showDoable')}
-          </button>
+          <FilterPanel filters={filters} onFilterChange={setFilters} />
         </Toolbar>
       ) : null}
 

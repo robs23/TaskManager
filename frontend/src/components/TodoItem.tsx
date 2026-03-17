@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import DOMPurify from 'dompurify'
 import { useTranslation } from 'react-i18next'
 import TodoSearchSelect from './TodoSearchSelect'
 
@@ -88,6 +89,20 @@ const formatFileSize = (bytes: number): string => {
 
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (!(node instanceof Element) || node.tagName !== 'A') {
+    return
+  }
+
+  node.setAttribute('target', '_blank')
+  node.setAttribute('rel', 'noopener noreferrer')
+})
+
+const sanitizeNotesHtml = (html: string): string =>
+  DOMPurify.sanitize(html, {
+    ADD_ATTR: ['target'],
+  })
 
 function TodoItem({
   todo,
@@ -355,9 +370,13 @@ function TodoItem({
               </p>
             ) : null}
             {todo.notes ? (
-              <p className="todo-detail">
-                <span className="todo-detail-label">{t('form.notes')}:</span> {todo.notes}
-              </p>
+              <div className="todo-detail">
+                <span className="todo-detail-label">{t('form.notes')}:</span>
+                <div
+                  className="todo-notes-content"
+                  dangerouslySetInnerHTML={{ __html: sanitizeNotesHtml(todo.notes) }}
+                />
+              </div>
             ) : null}
             <div className="todo-dependencies">
               <p className="todo-detail">

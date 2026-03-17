@@ -1,0 +1,64 @@
+.rich-editor-wrapper {
+  border: 1px solid #cbd2d9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.rich-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.rich-editor-toolbar button {
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  background: transparent;
+  color: #1f2933;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.rich-editor-toolbar button:hover:not(:disabled) {
+  background: #eef2f7;
+}
+
+.rich-editor-toolbar button.is-active {
+  background: #e5e7eb;
+  border-color: #d1d5db;
+}
+
+.rich-editor-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.rich-editor-content .ProseMirror {
+  min-height: 80px;
+  padding: 0.45rem 0.6rem;
+  line-height: 1.35;
+  outline: none;
+}
+
+.rich-editor-content .ProseMirror ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.25rem 0;
+}
+
+.rich-editor-content .ProseMirror li[data-type='taskItem'] {
+  display: flex;
+  align-items: flex-start;
+}
+
+.rich-editor-content .ProseMirror li[data-type='taskItem'] input[type='checkbox'] {
+  margin-right: 0.5rem;
+  margin-top: 0.2rem;
+}

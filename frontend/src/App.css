@@ -97,6 +97,67 @@
   border-color: #1e3a8a;
 }
 
+.filter-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-toggle-button {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #7da1c4;
+  border-radius: 8px;
+  padding: 0 0.65rem;
+  background: #f8fbff;
+  color: #1e3a8a;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out;
+}
+
+.filter-toggle-button:hover {
+  background: #e9f0f7;
+  border-color: #4f83b3;
+}
+
+.filter-toggle-button.is-active {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  color: #eff6ff;
+}
+
+.filter-toggle-button.is-active:hover {
+  background: #1e40af;
+  border-color: #1e3a8a;
+}
+
+.filter-date-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filter-date-group label {
+  font-size: 0.72rem;
+  color: #1e3a8a;
+  font-weight: 700;
+}
+
+.filter-date-input {
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid #7da1c4;
+  padding: 0 0.4rem;
+  background: #ffffff;
+  color: #1e3a8a;
+  font-size: 0.72rem;
+}
+
 .app-header {
   position: fixed;
   top: 0;
@@ -630,6 +691,47 @@
 .todo-detail-label {
   font-weight: 600;
   color: #334e68;
+}
+
+.todo-notes-content {
+  margin-top: 0.2rem;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: #1f2933;
+}
+
+.todo-notes-content p {
+  margin: 0 0 0.5em;
+}
+
+.todo-notes-content ul,
+.todo-notes-content ol {
+  margin: 0.25em 0;
+  padding-left: 1.5em;
+}
+
+.todo-notes-content ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.todo-notes-content ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+}
+
+.todo-notes-content ul[data-type='taskList'] li input[type='checkbox'] {
+  margin-right: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.todo-notes-content a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.todo-notes-content a:hover {
+  text-decoration: underline;
 }
 
 .todo-dependencies {

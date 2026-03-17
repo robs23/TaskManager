@@ -37,6 +37,14 @@
     "showDoable": "Pokaż wykonalne",
     "showAll": "Pokaż wszystkie"
   },
+  "filters": {
+    "showDoable": "Pokaż wykonalne",
+    "hideCompleted": "Ukryj ukończone",
+    "hasAttachments": "Z załącznikami",
+    "dueDate": "Termin",
+    "clearDate": "Wyczyść",
+    "showAll": "Pokaż wszystkie"
+  },
   "buttons": {
     "add": "Dodaj",
     "adding": "Dodawanie...",
@@ -71,6 +79,17 @@
     "descriptionOptional": "Opis (opcjonalnie)",
     "notesOptional": "Notatki (opcjonalnie)",
     "nameRequired": "Podaj nazwę zadania."
+  },
+  "editor": {
+    "bold": "B",
+    "italic": "I",
+    "underline": "U",
+    "strikethrough": "S",
+    "bulletList": "• Lista",
+    "orderedList": "1. Lista",
+    "taskList": "☑ Lista",
+    "link": "Link",
+    "linkPrompt": "Wprowadź adres URL"
   },
   "common": {
     "none": "Brak",

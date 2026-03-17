@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { fetchWithAuth } from '../api/fetchWithAuth'
+import RichTextEditor from './RichTextEditor'
 import TagInput from './TagInput'
 import TodoSearchSelect from './TodoSearchSelect'
 
@@ -297,16 +298,13 @@ function AddTodoForm({
           />
         </div>
         <div className="todo-field">
-          <label className="todo-field-label" htmlFor="todo-notes">
+          <label className="todo-field-label">
             {t('form.notes')}
           </label>
-          <textarea
-            id="todo-notes"
-            className="todo-input todo-textarea todo-textarea--notes"
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
+          <RichTextEditor
+            content={notes}
+            onChange={setNotes}
             placeholder={t('form.notesOptional')}
-            rows={2}
             disabled={isSubmitting}
           />
         </div>

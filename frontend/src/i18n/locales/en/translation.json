@@ -37,6 +37,14 @@
     "showDoable": "Show Doable",
     "showAll": "Show All"
   },
+  "filters": {
+    "showDoable": "Show Doable",
+    "hideCompleted": "Hide Completed",
+    "hasAttachments": "Has Attachments",
+    "dueDate": "Due Date",
+    "clearDate": "Clear",
+    "showAll": "Show All"
+  },
   "buttons": {
     "add": "Add",
     "adding": "Adding...",
@@ -71,6 +79,17 @@
     "descriptionOptional": "Description (optional)",
     "notesOptional": "Notes (optional)",
     "nameRequired": "Please enter a task name."
+  },
+  "editor": {
+    "bold": "B",
+    "italic": "I",
+    "underline": "U",
+    "strikethrough": "S",
+    "bulletList": "• List",
+    "orderedList": "1. List",
+    "taskList": "☑ List",
+    "link": "Link",
+    "linkPrompt": "Enter link URL"
   },
   "common": {
     "none": "None",
