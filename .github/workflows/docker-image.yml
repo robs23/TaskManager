@@ -3,8 +3,6 @@ name: Docker Image CI
 on:
   push:
     branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
 
 jobs:
 
@@ -12,7 +10,27 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      packages: write
+
     steps:
     - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . -f backend/TodoApi/Dockerfile -t todo-api:$(date +%s)
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and tag Docker image
+      run: |
+        IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/todo-api
+        IMAGE_TAG=${GITHUB_SHA::7}
+        docker build . -f backend/TodoApi/Dockerfile -t $IMAGE_NAME:$IMAGE_TAG -t $IMAGE_NAME:latest
+
+    - name: Push Docker image
+      run: |
+        IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/todo-api
+        docker push $IMAGE_NAME --all-tags
