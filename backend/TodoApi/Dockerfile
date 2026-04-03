@@ -1,7 +1,5 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS base
 
-USER $APP_UID
-
 WORKDIR /app
 EXPOSE 8080
 
@@ -30,6 +28,14 @@ RUN dotnet publish -c Release -o /app/publish /p:UseAppHost=false --no-restore
 #final image
 FROM base AS final
 WORKDIR /app
+
+# Create persistent data directory and set ownership before switching user
+RUN mkdir -p /data/uploads && chown -R $APP_UID:$APP_UID /data
+
+USER $APP_UID
+
 COPY --from=publish /app/publish .
+
+VOLUME ["/data"]
 ENTRYPOINT ["dotnet", "TodoApi.dll"]
 

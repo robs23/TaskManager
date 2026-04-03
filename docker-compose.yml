@@ -1,0 +1,28 @@
+services:
+  backend:
+    image: todo-api
+    build:
+      context: .
+      dockerfile: backend/TodoApi/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - todoapi-data:/data
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - Jwt__Secret=${JWT_SECRET:?Set JWT_SECRET in .env or shell}
+      - ConnectionStrings__TodoDb=Data Source=/data/todos.db
+      - FileStoragePath=/data/uploads
+
+  frontend:
+    image: todo-app
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  todoapi-data:
