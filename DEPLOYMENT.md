@@ -64,7 +64,8 @@ docker-compose -f docker-compose.prod.yml up -d
 4. In the **Environment variables** section, add:
    - `IMAGE_TAG`: Your desired version (e.g., `4d28220`)
    - `JWT_SECRET`: Your secure JWT secret
-5. Click **Deploy the stack**
+5. (Optional) If needed, edit the port mappings in the compose file before deploying
+6. Click **Deploy the stack**
 
 ## Access the Application
 
@@ -100,6 +101,33 @@ This volume persists across container restarts and updates.
 
 ## Troubleshooting
 
+### Port conflicts
+
+If ports 8080 or 5173 are already in use, edit the port mappings directly in `docker-compose.prod.yml`:
+
+```yaml
+services:
+  backend:
+    ports:
+      - "8081:8080"  # Changed host port from 8080 to 8081
+  
+  frontend:
+    ports:
+      - "3000:80"    # Changed host port from 5173 to 3000
+```
+
+**Important**: Only change the first number (host port). The second number is the container's internal port and must stay the same. Containers communicate on the Docker network, so changing host ports won't break inter-container communication.
+
+### Containers can't communicate
+
+Both services are on the `todo-network` bridge network, which allows them to communicate using service names:
+- Frontend → Backend: `http://backend:8080/api/`
+
+If you see connection errors, verify both containers are running:
+```bash
+docker-compose -f docker-compose.prod.yml ps
+```
+
 ### Cannot pull images
 If you get authentication errors, you may need to log into GHCR:
 
@@ -109,33 +137,43 @@ docker login ghcr.io -u <github-username>
 
 Use a GitHub Personal Access Token with `read:packages` permission as the password.
 
-### Port conflicts
-If ports 8080 or 5173 are already in use, modify the port mappings in `docker-compose.prod.yml`:
+## Networking
 
-```yaml
-ports:
-  - "8081:8080"  # Map to different host port
-```
+Both containers run on a dedicated Docker bridge network (`todo-network`), which enables:
+- Service discovery by name (frontend can reach backend via `http://backend:8080`)
+- Network isolation from other containers
+- Reliable inter-container communication regardless of host port mappings
+
+The nginx server in the frontend container proxies all `/api/*` requests to the backend container.
 
 ## Architecture
 
 ```
-┌─────────────────┐
-│   Frontend      │
-│   (port 5173)   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│   Backend API   │
-│   (port 8080)   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  SQLite DB      │
-│  (volume)       │
-└─────────────────┘
+          Host Ports
+          :5173  :8080
+            │      │
+            ▼      ▼
+    ┌───────────────────────┐
+    │   todo-network        │
+    │   (Docker Bridge)     │
+    │                       │
+    │  ┌─────────────────┐  │
+    │  │   Frontend      │  │
+    │  │  nginx :80      │  │
+    │  └────────┬────────┘  │
+    │           │ /api/*    │
+    │           ▼           │
+    │  ┌─────────────────┐  │
+    │  │   Backend API   │  │
+    │  │   :8080         │  │
+    │  └────────┬────────┘  │
+    │           │           │
+    └───────────┼───────────┘
+                ▼
+         ┌─────────────────┐
+         │  SQLite DB      │
+         │  (volume)       │
+         └─────────────────┘
 ```
 
 ## For Developers
