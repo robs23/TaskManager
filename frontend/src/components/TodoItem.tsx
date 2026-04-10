@@ -279,7 +279,15 @@ function TodoItem({
         >
           {todo.isCompleted ? '✓' : ''}
         </button>
-        <div className={`todo-content${formattedDeadline ? ' todo-content--with-deadline' : ''}`}>
+        <div
+          className={`todo-content${formattedDeadline ? ' todo-content--with-deadline' : ''}`}
+          role="button"
+          tabIndex={isProcessing ? -1 : 0}
+          style={{ cursor: isProcessing ? 'default' : 'pointer' }}
+          onClick={() => { if (!isProcessing) onStartEdit(todo) }}
+          onKeyDown={(event) => { if (!isProcessing && (event.key === 'Enter' || event.key === ' ')) onStartEdit(todo) }}
+          aria-label={t('buttons.edit') + ': ' + todo.name}
+        >
           <div className="todo-text">
             <div className="todo-title-row">
               <span className="todo-title" title={todo.name}>
