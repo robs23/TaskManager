@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mdi/js": "^7.4.47",
+    "@mdi/react": "^1.6.1",
     "@tiptap/extension-link": "^3.20.4",
     "@tiptap/extension-task-item": "^3.20.4",
     "@tiptap/extension-task-list": "^3.20.4",

@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import Icon from '@mdi/react'
+import { mdiUnfoldLessHorizontal, mdiUnfoldMoreHorizontal } from '@mdi/js'
 
 interface ToolbarProps {
   children?: ReactNode
@@ -24,15 +26,14 @@ function Toolbar({
       <div className="app-toolbar-content">
         {hasCollapseToggle ? (
           <button
-            className="toolbar-collapse-all-button"
+            className="toolbar-collapse-all-button icon-only-button"
             type="button"
+            title={collapseAllLabel}
+            aria-label={collapseAllLabel}
             onClick={onToggleAllCollapsed}
             disabled={isCollapseToggleDisabled}
           >
-            <span className="toolbar-collapse-all-icon" aria-hidden="true">
-              {isAllCollapsed ? '⇈' : '⇊'}
-            </span>
-            <span>{collapseAllLabel}</span>
+            <Icon path={isAllCollapsed ? mdiUnfoldMoreHorizontal : mdiUnfoldLessHorizontal} size={0.85} />
           </button>
         ) : null}
         {children}
