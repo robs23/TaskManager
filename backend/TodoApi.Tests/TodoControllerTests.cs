@@ -55,6 +55,32 @@ public class TodoControllerTests
     }
 
     [Fact]
+    public async Task GetTodos_OrdersBySortOrderThenId_AndReturnsSortOrder()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var first = new Todo { UserId = TestUserId, Name = "First", CreatedAt = DateTime.UtcNow };
+        var second = new Todo { UserId = TestUserId, Name = "Second", CreatedAt = DateTime.UtcNow };
+        var third = new Todo { UserId = TestUserId, Name = "Third", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(first, second, third);
+        await context.SaveChangesAsync();
+
+        first.SortOrder = 20;
+        second.SortOrder = 10;
+        third.SortOrder = 10;
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.GetTodos();
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoResponse>>(okResult.Value).ToList();
+        Assert.Equal(new[] { second.Id, third.Id, first.Id }, todos.Select(todo => todo.Id).ToArray());
+        Assert.Equal(new[] { 10, 10, 20 }, todos.Select(todo => todo.SortOrder).ToArray());
+    }
+
+    [Fact]
     public async Task SearchTodos_ReturnsEmptyArrayWhenQueryIsNullOrTooShort()
     {
         var databaseName = Guid.NewGuid().ToString();
@@ -141,6 +167,7 @@ public class TodoControllerTests
         var fetched = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
         Assert.Equal(todo.Id, fetched.Id);
         Assert.Equal(todo.Name, fetched.Name);
+        Assert.Equal(todo.SortOrder, fetched.SortOrder);
     }
 
     [Fact]
@@ -399,6 +426,66 @@ public class TodoControllerTests
         var result = await controller.GetTodo(todo.Id);
 
         Assert.IsType<NotFoundResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task ReorderTodos_ReturnsBadRequestWhenRequestBodyIsEmpty()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.ReorderTodos(new List<TodoController.TodoReorderItem>());
+
+        Assert.IsType<BadRequestResult>(result);
+    }
+
+    [Fact]
+    public async Task ReorderTodos_ReturnsForbidWhenAnyTodoBelongsToDifferentUser()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var mine = new Todo { UserId = TestUserId, Name = "Mine", CreatedAt = DateTime.UtcNow };
+        var other = new Todo { UserId = 2, Name = "Other", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(mine, other);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.ReorderTodos(
+            new List<TodoController.TodoReorderItem>
+            {
+                new(mine.Id, 10),
+                new(other.Id, 20)
+            });
+
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task ReorderTodos_UpdatesSortOrdersAndReturnsNoContent()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var first = new Todo { UserId = TestUserId, Name = "First", SortOrder = 10, CreatedAt = DateTime.UtcNow };
+        var second = new Todo { UserId = TestUserId, Name = "Second", SortOrder = 20, CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(first, second);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.ReorderTodos(
+            new List<TodoController.TodoReorderItem>
+            {
+                new(first.Id, 200),
+                new(second.Id, 100)
+            });
+
+        Assert.IsType<NoContentResult>(result);
+        var reordered = await context.Todos
+            .Where(todo => todo.UserId == TestUserId)
+            .OrderBy(todo => todo.Id)
+            .ToListAsync();
+        Assert.Equal(200, reordered[0].SortOrder);
+        Assert.Equal(100, reordered[1].SortOrder);
     }
 
     [Fact]

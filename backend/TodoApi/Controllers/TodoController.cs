@@ -47,6 +47,8 @@ public class TodoController : ControllerBase
             .Include(t => t.RelatedByTodos)
             .Include(t => t.Tags)
             .Include(t => t.Attachments)
+            .OrderBy(t => t.SortOrder)
+            .ThenBy(t => t.Id)
             .ToListAsync();
         var response = todos.Select(ToResponse).ToList();
         return Ok(response);
@@ -104,6 +106,7 @@ public class TodoController : ControllerBase
     public sealed class TodoResponse
     {
         public int Id { get; set; }
+        public int SortOrder { get; set; }
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
         public DateTime? Deadline { get; set; }
@@ -217,6 +220,8 @@ public class TodoController : ControllerBase
     {
         public string Name { get; set; } = string.Empty;
     }
+
+    public sealed record TodoReorderItem(int Id, int SortOrder);
 
     [HttpPost("{todoId:int}/attachments")]
     public async Task<ActionResult<FileAttachmentResponse>> UploadAttachment(
@@ -395,6 +400,41 @@ public class TodoController : ControllerBase
 
         await _context.SaveChangesAsync();
         return Ok(ToResponse(todo));
+    }
+
+    [HttpPut("reorder")]
+    public async Task<IActionResult> ReorderTodos([FromBody] List<TodoReorderItem>? items)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        if (items is null || items.Count == 0)
+        {
+            return BadRequest();
+        }
+
+        var submittedIds = items.Select(item => item.Id).Distinct().ToList();
+        var todos = await _context.Todos
+            .Where(todo => todo.UserId == userId && submittedIds.Contains(todo.Id))
+            .ToListAsync();
+
+        if (todos.Count != submittedIds.Count)
+        {
+            return Forbid();
+        }
+
+        var sortOrderById = items
+            .GroupBy(item => item.Id)
+            .ToDictionary(group => group.Key, group => group.Last().SortOrder);
+        foreach (var todo in todos)
+        {
+            todo.SortOrder = sortOrderById[todo.Id];
+        }
+
+        await _context.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpPost("{id:int}/dependencies/{dependsOnId:int}")]
@@ -648,6 +688,7 @@ public class TodoController : ControllerBase
         return new TodoResponse
         {
             Id = todo.Id,
+            SortOrder = todo.SortOrder,
             Name = todo.Name,
             Description = todo.Description,
             Deadline = todo.Deadline,

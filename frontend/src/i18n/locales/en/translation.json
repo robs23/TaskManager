@@ -78,7 +78,9 @@
     "noParentTopLevel": "No parent (top-level)",
     "descriptionOptional": "Description (optional)",
     "notesOptional": "Notes (optional)",
-    "nameRequired": "Please enter a task name."
+    "nameRequired": "Please enter a task name.",
+    "tabDetails": "Details",
+    "tabLinks": "Links"
   },
   "editor": {
     "bold": "B",

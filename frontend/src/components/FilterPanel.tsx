@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Icon from '@mdi/react'
 import { mdiBolt, mdiEyeOff, mdiPaperclip, mdiCalendar, mdiClose } from '@mdi/js'
@@ -16,6 +17,7 @@ interface FilterPanelProps {
 
 export function FilterPanel({ filters, onFilterChange }: FilterPanelProps) {
   const { t } = useTranslation()
+  const [showDatePicker, setShowDatePicker] = useState(false)
 
   const handleToggle = (key: 'showDoableOnly' | 'hideCompleted' | 'hasAttachmentsOnly'): void => {
     onFilterChange({
@@ -36,6 +38,7 @@ export function FilterPanel({ filters, onFilterChange }: FilterPanelProps) {
       ...filters,
       dueDate: null,
     })
+    setShowDatePicker(false)
   }
 
   return (
@@ -73,29 +76,39 @@ export function FilterPanel({ filters, onFilterChange }: FilterPanelProps) {
         <Icon path={mdiPaperclip} size={0.85} />
       </button>
 
-      <div className="filter-date-group">
-        <label htmlFor="filter-due-date" aria-label={t('filters.dueDate')}>
-          <Icon path={mdiCalendar} size={0.85} />
-        </label>
-        <input
-          id="filter-due-date"
-          className="filter-date-input"
-          type="date"
-          value={filters.dueDate ?? ''}
-          onChange={(event) => handleDueDateChange(event.target.value)}
-        />
-        {filters.dueDate ? (
-          <button
-            type="button"
-            className="filter-toggle-button icon-only-button"
-            title={t('filters.clearDate')}
-            aria-label={t('filters.clearDate')}
-            onClick={clearDueDate}
-          >
-            <Icon path={mdiClose} size={0.85} />
-          </button>
-        ) : null}
-      </div>
+      <button
+        type="button"
+        className={`filter-toggle-button icon-only-button${filters.dueDate ? ' is-active' : ''}`}
+        title={t('filters.dueDate')}
+        aria-label={t('filters.dueDate')}
+        aria-expanded={showDatePicker}
+        onClick={() => setShowDatePicker((previous) => !previous)}
+      >
+        <Icon path={mdiCalendar} size={0.85} />
+      </button>
+
+      {(showDatePicker || filters.dueDate) ? (
+        <div className="filter-date-group">
+          <input
+            id="filter-due-date"
+            className="filter-date-input"
+            type="date"
+            value={filters.dueDate ?? ''}
+            onChange={(event) => handleDueDateChange(event.target.value)}
+          />
+          {filters.dueDate ? (
+            <button
+              type="button"
+              className="filter-toggle-button icon-only-button"
+              title={t('filters.clearDate')}
+              aria-label={t('filters.clearDate')}
+              onClick={clearDueDate}
+            >
+              <Icon path={mdiClose} size={0.85} />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }

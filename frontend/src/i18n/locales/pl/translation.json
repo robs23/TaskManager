@@ -78,7 +78,9 @@
     "noParentTopLevel": "Brak nadrzędnego (poziom główny)",
     "descriptionOptional": "Opis (opcjonalnie)",
     "notesOptional": "Notatki (opcjonalnie)",
-    "nameRequired": "Podaj nazwę zadania."
+    "nameRequired": "Podaj nazwę zadania.",
+    "tabDetails": "Szczegóły",
+    "tabLinks": "Powiązania"
   },
   "editor": {
     "bold": "B",

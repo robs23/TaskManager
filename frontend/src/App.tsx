@@ -41,6 +41,7 @@ interface UploadedAttachmentResponse extends AttachmentSummary {
 
 interface TodoApiResponse {
   id: number
+  sortOrder?: number
   name: string
   description: string | null
   deadline: string | null
@@ -56,6 +57,7 @@ interface TodoApiResponse {
 }
 
 interface Todo extends Omit<TodoApiResponse, 'dependencies' | 'relatedTodos'> {
+  sortOrder: number
   doable: boolean
   dependencies: TodoDependencySummary[]
   relatedTodos: TodoRelatedSummary[]
@@ -81,6 +83,11 @@ interface CreateTodoPayload {
 
 interface UpdateTodoPayload extends CreateTodoPayload {
   isCompleted: boolean
+}
+
+interface ActiveDropZone {
+  afterTodoId: number | null
+  parentId: number | null
 }
 
 const normalizeText = (value: string): string | null => {
@@ -150,6 +157,7 @@ const hydrateTodo = (todo: TodoApiResponse): Todo => {
 
   return {
     ...todo,
+    sortOrder: todo.sortOrder ?? todo.id,
     dependencies,
     relatedTodos,
     tags,
@@ -184,6 +192,11 @@ const buildTodoHierarchy = (
       roots.push(node)
     }
   })
+
+  nodes.forEach((node) => {
+    node.children.sort((left, right) => left.sortOrder - right.sortOrder)
+  })
+  roots.sort((left, right) => left.sortOrder - right.sortOrder)
 
   const descendantMap = new Map<number, Set<number>>()
 
@@ -268,7 +281,7 @@ function App() {
   const [collapsedTodoIds, setCollapsedTodoIds] = useState<Set<number>>(new Set<number>())
   const [draggingTodoId, setDraggingTodoId] = useState<number | null>(null)
   const [activeDropTodoId, setActiveDropTodoId] = useState<number | null>(null)
-  const [isRootDropActive, setIsRootDropActive] = useState<boolean>(false)
+  const [activeDropZone, setActiveDropZone] = useState<ActiveDropZone | null>(null)
   const [filters, setFilters] = useState<FilterState>({
     showDoableOnly: false,
     hideCompleted: false,
@@ -388,7 +401,7 @@ function App() {
 
   const clearDropTargets = useCallback((): void => {
     setActiveDropTodoId(null)
-    setIsRootDropActive(false)
+    setActiveDropZone(null)
   }, [])
 
   const clearDragState = useCallback((): void => {
@@ -830,7 +843,7 @@ function App() {
 
     setDraggingTodoId(todoId)
     setActiveDropTodoId(null)
-    setIsRootDropActive(false)
+    setActiveDropZone(null)
     setError('')
   }
 
@@ -844,16 +857,22 @@ function App() {
     }
 
     setActiveDropTodoId(todoId)
-    setIsRootDropActive(false)
+    setActiveDropZone(null)
   }
 
-  const handleDragOverRoot = (): void => {
+  const handleDragOverZone = (afterTodoId: number | null, parentId: number | null): void => {
     if (draggingTodoId === null) {
       return
     }
 
+    const draggedTodo = todos.find((todo) => todo.id === draggingTodoId)
+    if (!draggedTodo || (draggedTodo.parentId ?? null) !== parentId) {
+      setActiveDropZone(null)
+      return
+    }
+
+    setActiveDropZone({ afterTodoId, parentId })
     setActiveDropTodoId(null)
-    setIsRootDropActive(true)
   }
 
   const handleDropOnTodo = (targetTodoId: number): void => {
@@ -877,7 +896,7 @@ function App() {
     void handleReparent(draggedTodo, targetTodoId)
   }
 
-  const handleDropOnRoot = (): void => {
+  const handleDropOnZone = async (afterTodoId: number | null, parentId: number | null): Promise<void> => {
     if (draggingTodoId === null) {
       return
     }
@@ -888,7 +907,60 @@ function App() {
       return
     }
 
-    void handleReparent(draggedTodo, null)
+    const normalizedParentId = parentId ?? null
+    if ((draggedTodo.parentId ?? null) !== normalizedParentId) {
+      return
+    }
+
+    const sortedSiblings = todos
+      .filter((todo) => (todo.parentId ?? null) === normalizedParentId)
+      .sort((left, right) => left.sortOrder - right.sortOrder)
+    const draggedIndex = sortedSiblings.findIndex((todo) => todo.id === draggedTodo.id)
+    if (draggedIndex === -1) {
+      return
+    }
+
+    const currentPreviousTodoId = draggedIndex === 0 ? null : sortedSiblings[draggedIndex - 1].id
+    if (afterTodoId === currentPreviousTodoId) {
+      return
+    }
+
+    const siblingsWithoutDragged = sortedSiblings.filter((todo) => todo.id !== draggedTodo.id)
+    const insertIndex =
+      afterTodoId === null ? 0 : siblingsWithoutDragged.findIndex((todo) => todo.id === afterTodoId) + 1
+    if (afterTodoId !== null && insertIndex === 0) {
+      return
+    }
+
+    siblingsWithoutDragged.splice(insertIndex, 0, draggedTodo)
+    const reorderPayload = siblingsWithoutDragged.map((todo, index) => ({
+      id: todo.id,
+      sortOrder: index * 10,
+    }))
+
+    try {
+      const response = await fetchWithAuth(`${API_BASE}/reorder`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(reorderPayload),
+      })
+
+      if (!response.ok) {
+        throw new Error(t('errors.updateTodo'))
+      }
+
+      setTodos((previous) =>
+        previous.map((todo) => {
+          const reordered = reorderPayload.find((item) => item.id === todo.id)
+          return reordered ? { ...todo, sortOrder: reordered.sortOrder } : todo
+        }),
+      )
+    } catch (updateError) {
+      console.error(updateError)
+      setError(t('errors.updateTodoMessage'))
+    }
   }
 
   const handleAddSubtask = (todoId: number): void => {
@@ -1174,6 +1246,12 @@ function App() {
               }}
               onCancel={handleCloseCreateForm}
               isEditMode={Boolean(editingTodo)}
+              dependencies={editingTodo?.dependencies ?? []}
+              relatedTodos={editingTodo?.relatedTodos ?? []}
+              onAddDependency={editingTodo ? (id) => void handleAddDependency(editingTodo, id) : undefined}
+              onRemoveDependency={editingTodo ? (id) => void handleRemoveDependency(editingTodo, id) : undefined}
+              onAddRelated={editingTodo ? (id) => void handleAddRelated(editingTodo, id) : undefined}
+              onRemoveRelated={editingTodo ? (id) => void handleRemoveRelated(editingTodo, id) : undefined}
               initialDraft={
                 editingTodo
                   ? {
@@ -1197,7 +1275,6 @@ function App() {
         {isAuthenticated && !isLoading ? (
           <TodoList
             todos={visibleRoots}
-            allTodos={todos}
             descendantMap={descendantMap}
             collapsedTodoIds={collapsedTodoIds}
             highlightedTodoIds={highlightedTodoIds}
@@ -1207,21 +1284,17 @@ function App() {
             onStartEdit={handleStartEdit}
             onAddSubtask={handleAddSubtask}
             onToggleCollapsed={handleToggleCollapsed}
-            onAddDependency={handleAddDependency}
-            onRemoveDependency={handleRemoveDependency}
-            onAddRelated={handleAddRelated}
-            onRemoveRelated={handleRemoveRelated}
             onDownloadAttachment={handleDownloadAttachment}
             onDeleteAttachment={handleDeleteAttachment}
             draggingTodoId={draggingTodoId}
             activeDropTodoId={activeDropTodoId}
-            isRootDropActive={isRootDropActive}
+            activeDropZone={activeDropZone}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onDragOverTodo={handleDragOverTodo}
             onDropOnTodo={handleDropOnTodo}
-            onDragOverRoot={handleDragOverRoot}
-            onDropOnRoot={handleDropOnRoot}
+            onDragOverZone={handleDragOverZone}
+            onDropOnZone={(afterTodoId, parentId) => void handleDropOnZone(afterTodoId, parentId)}
             onClearDropTargets={clearDropTargets}
             processingIds={processingIds}
           />

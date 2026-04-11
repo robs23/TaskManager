@@ -384,6 +384,29 @@
   color: #1f2933;
 }
 
+.form-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.form-tab-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0.3rem 0.65rem;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.form-tab-button.is-active {
+  border-color: #1d4ed8;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
 .todo-controls {
   display: flex;
   gap: 0.6rem;
@@ -528,6 +551,21 @@
   gap: 0.45rem;
   width: 100%;
   flex: 1;
+}
+
+.todo-drop-zone {
+  height: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  transition: background 0.1s, height 0.1s;
+}
+
+.todo-drop-zone.is-active {
+  height: 6px;
+  background: #2563eb;
+  border-radius: 3px;
+  margin: 1px 4px;
 }
 
 .todo-list.is-root-drop-target {

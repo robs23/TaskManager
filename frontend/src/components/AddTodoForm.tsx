@@ -16,6 +16,18 @@ export interface TodoDraft {
   files: File[]
 }
 
+export interface TodoDependencySummary {
+  id: number
+  name: string
+  isCompleted: boolean
+}
+
+export interface TodoRelatedSummary {
+  id: number
+  name: string
+  isCompleted: boolean
+}
+
 export interface AddTodoFormProps {
   onSubmit: (todoDraft: TodoDraft) => Promise<boolean>
   isSubmitting: boolean
@@ -30,6 +42,12 @@ export interface AddTodoFormProps {
   onCancel?: () => void
   isEditMode?: boolean
   initialDraft?: Partial<Omit<TodoDraft, 'parentId'>> & { id?: number; parentName?: string }
+  dependencies?: TodoDependencySummary[]
+  relatedTodos?: TodoRelatedSummary[]
+  onAddDependency?: (dependsOnId: number) => void
+  onRemoveDependency?: (dependsOnId: number) => void
+  onAddRelated?: (relatedId: number) => void
+  onRemoveRelated?: (relatedId: number) => void
 }
 
 export interface AttachmentSummary {
@@ -73,8 +91,15 @@ function AddTodoForm({
   onCancel,
   isEditMode = false,
   initialDraft,
+  dependencies = [],
+  relatedTodos = [],
+  onAddDependency,
+  onRemoveDependency,
+  onAddRelated,
+  onRemoveRelated,
 }: AddTodoFormProps) {
   const { t } = useTranslation()
+  const [activeTab, setActiveTab] = useState<'details' | 'links'>('details')
   const [name, setName] = useState<string>(initialDraft?.name ?? '')
   const [description, setDescription] = useState<string>(initialDraft?.description ?? '')
   const [deadline, setDeadline] = useState<string>(initialDraft?.deadline ?? '')
@@ -100,6 +125,7 @@ function AddTodoForm({
     setFormError('')
     setFileError('')
     setAttachmentActionError('')
+    setActiveTab('details')
   }, [initialDraft, isEditMode, parentName])
 
   useEffect(() => {
@@ -233,166 +259,264 @@ function AddTodoForm({
       <label className="todo-label" htmlFor="todo-name">
         {isEditMode ? t('form.editTask') : t('form.newTask')}
       </label>
-      <div className="todo-controls">
-        <div className="todo-field">
-          <label className="todo-field-label" htmlFor="todo-name">
-            {t('form.taskName')}
-          </label>
-          <input
-            id="todo-name"
-            className="todo-input"
-            type="text"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t('form.taskName')}
-            disabled={isSubmitting}
-            required
-          />
+      {isEditMode ? (
+        <div className="form-tabs">
+          <button
+            className={`form-tab-button${activeTab === 'details' ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => setActiveTab('details')}
+          >
+            {t('form.tabDetails')}
+          </button>
+          <button
+            className={`form-tab-button${activeTab === 'links' ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => setActiveTab('links')}
+          >
+            {t('form.tabLinks')}
+          </button>
         </div>
-        <div className="todo-field">
-          <label className="todo-field-label" htmlFor="todo-deadline">
-            {t('form.deadline')}
-          </label>
-          <input
-            id="todo-deadline"
-            className="todo-input"
-            type="date"
-            value={deadline}
-            onChange={(event) => setDeadline(event.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
-        <div className="todo-field">
-          <label className="todo-field-label">
-            {t('form.parentTask')}
-          </label>
-          <TodoSearchSelect
-            selectedItems={parentId ? [{ id: parentId, name: selectedParentName }] : []}
-            onSelect={(item) => {
-              onParentChange(item.id)
-              setSelectedParentName(item.name)
-            }}
-            onDeselect={() => {
-              onParentChange(null)
-              setSelectedParentName('')
-            }}
-            excludeIds={initialDraft?.id ? [initialDraft.id] : []}
-            singleSelect
-            placeholder={t('form.noParentTopLevel')}
-          />
-        </div>
-      </div>
-      <div className="todo-controls todo-controls--stacked">
-        <div className="todo-field">
-          <label className="todo-field-label" htmlFor="todo-description">
-            {t('form.description')}
-          </label>
-          <input
-            id="todo-description"
-            className="todo-input"
-            type="text"
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder={t('form.descriptionOptional')}
-            disabled={isSubmitting}
-          />
-        </div>
-        <div className="todo-field">
-          <label className="todo-field-label">
-            {t('form.notes')}
-          </label>
-          <RichTextEditor
-            content={notes}
-            onChange={setNotes}
-            placeholder={t('form.notesOptional')}
-            disabled={isSubmitting}
-          />
-        </div>
-        <div className="todo-field">
-          <label className="todo-field-label" htmlFor="todo-tags">
-            {t('form.tags')}
-          </label>
-          <TagInput
-            id="todo-tags"
-            value={tags}
-            onChange={setTags}
-            placeholder={t('form.tagsPlaceholder')}
-            disabled={isSubmitting}
-          />
-        </div>
-        <div className="todo-field">
-          <label className="todo-field-label" htmlFor="todo-files">
-            {t('form.attachments')}
-          </label>
-          <input
-            id="todo-files"
-            className="todo-input todo-file-input"
-            type="file"
-            multiple
-            onChange={handleFilesChange}
-            disabled={isSubmitting}
-          />
-          <p className="todo-field-hint">
-            {t('form.attachmentSizeLimit', { maxSize: formatFileSize(maxFileSizeBytes) })}
-          </p>
-          {selectedFiles.length > 0 ? (
-            <ul className="todo-file-list">
-              {selectedFiles.map((file) => (
-                <li key={`${file.name}-${file.lastModified}`} className="todo-file-list-item">
-                  <span className="todo-file-name">{file.name}</span>
-                  <span className="todo-file-size">{formatFileSize(file.size)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-        <div className="todo-field">
-          <p className="todo-field-label">{t('form.attachmentList')}</p>
-          {existingAttachments.length === 0 ? (
-            <p className="todo-field-hint">{t('form.noAttachments')}</p>
-          ) : (
-            <ul className="todo-file-list">
-              {existingAttachments.map((attachment) => (
-                <li key={attachment.id} className="todo-file-list-item">
-                  <span className="todo-file-name" title={attachment.fileName}>
-                    {attachment.fileName}
-                  </span>
-                  <span className="todo-file-size">
-                    {formatFileSize(attachment.fileSize)}
-                  </span>
-                  <div className="todo-attachment-actions">
+      ) : null}
+      {(!isEditMode || activeTab === 'details') ? (
+        <>
+          <div className="todo-controls">
+            <div className="todo-field">
+              <label className="todo-field-label" htmlFor="todo-name">
+                {t('form.taskName')}
+              </label>
+              <input
+                id="todo-name"
+                className="todo-input"
+                type="text"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={t('form.taskName')}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+            <div className="todo-field">
+              <label className="todo-field-label" htmlFor="todo-deadline">
+                {t('form.deadline')}
+              </label>
+              <input
+                id="todo-deadline"
+                className="todo-input"
+                type="date"
+                value={deadline}
+                onChange={(event) => setDeadline(event.target.value)}
+                disabled={isSubmitting}
+              />
+            </div>
+            <div className="todo-field">
+              <label className="todo-field-label">
+                {t('form.parentTask')}
+              </label>
+              <TodoSearchSelect
+                selectedItems={parentId ? [{ id: parentId, name: selectedParentName }] : []}
+                onSelect={(item) => {
+                  onParentChange(item.id)
+                  setSelectedParentName(item.name)
+                }}
+                onDeselect={() => {
+                  onParentChange(null)
+                  setSelectedParentName('')
+                }}
+                excludeIds={initialDraft?.id ? [initialDraft.id] : []}
+                singleSelect
+                placeholder={t('form.noParentTopLevel')}
+              />
+            </div>
+          </div>
+          <div className="todo-controls todo-controls--stacked">
+            <div className="todo-field">
+              <label className="todo-field-label" htmlFor="todo-description">
+                {t('form.description')}
+              </label>
+              <input
+                id="todo-description"
+                className="todo-input"
+                type="text"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder={t('form.descriptionOptional')}
+                disabled={isSubmitting}
+              />
+            </div>
+            <div className="todo-field">
+              <label className="todo-field-label">
+                {t('form.notes')}
+              </label>
+              <RichTextEditor
+                content={notes}
+                onChange={setNotes}
+                placeholder={t('form.notesOptional')}
+                disabled={isSubmitting}
+              />
+            </div>
+            <div className="todo-field">
+              <label className="todo-field-label" htmlFor="todo-tags">
+                {t('form.tags')}
+              </label>
+              <TagInput
+                id="todo-tags"
+                value={tags}
+                onChange={setTags}
+                placeholder={t('form.tagsPlaceholder')}
+                disabled={isSubmitting}
+              />
+            </div>
+            <div className="todo-field">
+              <label className="todo-field-label" htmlFor="todo-files">
+                {t('form.attachments')}
+              </label>
+              <input
+                id="todo-files"
+                className="todo-input todo-file-input"
+                type="file"
+                multiple
+                onChange={handleFilesChange}
+                disabled={isSubmitting}
+              />
+              <p className="todo-field-hint">
+                {t('form.attachmentSizeLimit', { maxSize: formatFileSize(maxFileSizeBytes) })}
+              </p>
+              {selectedFiles.length > 0 ? (
+                <ul className="todo-file-list">
+                  {selectedFiles.map((file) => (
+                    <li key={`${file.name}-${file.lastModified}`} className="todo-file-list-item">
+                      <span className="todo-file-name">{file.name}</span>
+                      <span className="todo-file-size">{formatFileSize(file.size)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+            <div className="todo-field">
+              <p className="todo-field-label">{t('form.attachmentList')}</p>
+              {existingAttachments.length === 0 ? (
+                <p className="todo-field-hint">{t('form.noAttachments')}</p>
+              ) : (
+                <ul className="todo-file-list">
+                  {existingAttachments.map((attachment) => (
+                    <li key={attachment.id} className="todo-file-list-item">
+                      <span className="todo-file-name" title={attachment.fileName}>
+                        {attachment.fileName}
+                      </span>
+                      <span className="todo-file-size">
+                        {formatFileSize(attachment.fileSize)}
+                      </span>
+                      <div className="todo-attachment-actions">
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => void handleDownloadAttachment(attachment)}
+                          disabled={isSubmitting}
+                        >
+                          {t('todoItem.downloadAttachment')}
+                        </button>
+                        <button
+                          className="secondary-button todo-attachment-delete"
+                          type="button"
+                          onClick={() => void handleDeleteAttachment(attachment.id)}
+                          disabled={isSubmitting}
+                        >
+                          {t('todoItem.deleteAttachment')}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {uploadProgress?.isUploading ? (
+                <p className="todo-field-hint">
+                  {t('form.uploadProgress', {
+                    completed: uploadProgress.completed,
+                    total: uploadProgress.total,
+                    fileName: uploadProgress.currentFileName ?? '',
+                  })}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </>
+      ) : null}
+      {(isEditMode && activeTab === 'links') ? (
+        <div className="todo-controls todo-controls--stacked">
+          <div className="todo-field">
+            <p className="todo-field-label">{t('common.dependencies')}</p>
+            {dependencies.length === 0 ? (
+              <p className="todo-field-hint">{t('common.none')}</p>
+            ) : (
+              <ul className="dependency-list">
+                {dependencies.map((dependency) => (
+                  <li
+                    key={dependency.id}
+                    className={`dependency-item${dependency.isCompleted ? ' is-completed' : ''}`}
+                  >
+                    <span>{dependency.name}</span>
+                    <span
+                      className={`dependency-status${dependency.isCompleted ? ' is-completed' : ''}`}
+                    >
+                      {dependency.isCompleted ? t('common.complete') : t('common.pending')}
+                    </span>
                     <button
                       className="secondary-button"
                       type="button"
-                      onClick={() => void handleDownloadAttachment(attachment)}
-                      disabled={isSubmitting}
+                      onClick={() => onRemoveDependency?.(dependency.id)}
+                      disabled={isSubmitting || !onRemoveDependency}
                     >
-                      {t('todoItem.downloadAttachment')}
+                      {t('buttons.remove')}
                     </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <TodoSearchSelect
+              selectedItems={[]}
+              onSelect={(item) => onAddDependency?.(item.id)}
+              onDeselect={() => {}}
+              excludeIds={[initialDraft?.id ?? 0, ...dependencies.map((dependency) => dependency.id)].filter(
+                Boolean,
+              )}
+              singleSelect
+              placeholder={t('common.addDependency')}
+            />
+          </div>
+          <div className="todo-field">
+            <p className="todo-field-label">{t('common.relatedTodos')}</p>
+            {relatedTodos.length === 0 ? (
+              <p className="todo-field-hint">{t('common.noRelatedTodos')}</p>
+            ) : (
+              <ul className="dependency-list">
+                {relatedTodos.map((relatedTodo) => (
+                  <li key={relatedTodo.id} className="dependency-item">
+                    <span>{relatedTodo.name}</span>
                     <button
-                      className="secondary-button todo-attachment-delete"
+                      className="secondary-button"
                       type="button"
-                      onClick={() => void handleDeleteAttachment(attachment.id)}
-                      disabled={isSubmitting}
+                      onClick={() => onRemoveRelated?.(relatedTodo.id)}
+                      disabled={isSubmitting || !onRemoveRelated}
                     >
-                      {t('todoItem.deleteAttachment')}
+                      {t('buttons.remove')}
                     </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          {uploadProgress?.isUploading ? (
-            <p className="todo-field-hint">
-              {t('form.uploadProgress', {
-                completed: uploadProgress.completed,
-                total: uploadProgress.total,
-                fileName: uploadProgress.currentFileName ?? '',
-              })}
-            </p>
-          ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <TodoSearchSelect
+              selectedItems={[]}
+              onSelect={(item) => onAddRelated?.(item.id)}
+              onDeselect={() => {}}
+              excludeIds={[initialDraft?.id ?? 0, ...relatedTodos.map((relatedTodo) => relatedTodo.id)].filter(
+                Boolean,
+              )}
+              singleSelect
+              placeholder={t('common.relatedTodos')}
+            />
+          </div>
         </div>
-      </div>
+      ) : null}
       <div className="todo-controls">
         <button className="primary-button" type="submit" disabled={isSubmitting}>
           {isSubmitting
