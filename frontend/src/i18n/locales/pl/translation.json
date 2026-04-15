@@ -9,7 +9,8 @@
     "user": "Użytkownik",
     "userName": "Nazwa użytkownika",
     "language": "Język",
-    "logout": "Wyloguj"
+    "logout": "Wyloguj",
+    "logoAria": "Logo Menedżera Zadań"
   },
   "auth": {
     "loginTitle": "Zaloguj się",
@@ -57,7 +58,9 @@
     "delete": "Usuń",
     "remove": "Usuń",
     "removeRelated": "Usuń",
-    "addSubtask": "Dodaj podzadanie"
+    "addSubtask": "Dodaj podzadanie",
+    "openCreateModalAria": "Otwórz okno tworzenia zadania",
+    "closeCreateModalAria": "Zamknij okno tworzenia zadania"
   },
   "form": {
     "newTask": "Nowe zadanie",
@@ -157,6 +160,21 @@
   },
   "toast": {
     "blockedByDependencies": "Nie można ukończyć: najpierw zakończ wszystkie zależności"
+  },
+  "settings": {
+    "title": "Ustawienia",
+    "description": "Wybierz domyślny język aplikacji i sposób ładowania ukończonych zadań przy starcie.",
+    "open": "Ustawienia",
+    "viewTodos": "Zadania",
+    "language": "Język",
+    "showCompletedOnStartup": "Ładuj ukończone zadania przy starcie",
+    "loading": "Ładowanie ustawień...",
+    "save": "Zapisz ustawienia",
+    "saving": "Zapisywanie...",
+    "errors": {
+      "loadFailed": "Nie można wczytać ustawień. Spróbuj ponownie.",
+      "saveFailed": "Nie można zapisać ustawień. Spróbuj ponownie."
+    }
   }
 }
 

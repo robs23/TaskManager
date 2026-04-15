@@ -90,9 +90,39 @@ interface ActiveDropZone {
   parentId: number | null
 }
 
+interface UserSettings {
+  preferredLanguage: 'en' | 'pl'
+  showCompletedOnStartup: boolean
+}
+
+interface UserSettingsResponse {
+  preferredLanguage?: string
+  showCompletedOnStartup?: boolean
+}
+
+type AppView = 'todos' | 'settings'
+
 const normalizeText = (value: string): string | null => {
   const trimmed = value.trim()
   return trimmed ? trimmed : null
+}
+
+const normalizeLanguage = (language: string | undefined): 'en' | 'pl' => {
+  if (language?.toLowerCase().startsWith('pl')) {
+    return 'pl'
+  }
+
+  return 'en'
+}
+
+const normalizeSettings = (settings: UserSettingsResponse | null | undefined): UserSettings => ({
+  preferredLanguage: normalizeLanguage(settings?.preferredLanguage),
+  showCompletedOnStartup: Boolean(settings?.showCompletedOnStartup),
+})
+
+const DEFAULT_USER_SETTINGS: UserSettings = {
+  preferredLanguage: 'en',
+  showCompletedOnStartup: false,
 }
 
 const normalizeTag = (value: string): string => value.trim().toLowerCase()
@@ -267,7 +297,7 @@ const filterTodoHierarchy = (items: Todo[], filters: FilterState): Todo[] => {
 }
 
 function App() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [authToken, setAuthToken] = useState<string>(() => localStorage.getItem('token') ?? '')
   const [authUsername, setAuthUsername] = useState<string>(() => localStorage.getItem('username') ?? '')
   const [todos, setTodos] = useState<Todo[]>([])
@@ -298,6 +328,13 @@ function App() {
   const [formAttachments, setFormAttachments] = useState<AttachmentSummary[]>([])
   const [toast, setToast] = useState<string | null>(null)
   const [highlightedTodoIds, setHighlightedTodoIds] = useState<Set<number>>(new Set<number>())
+  const [activeView, setActiveView] = useState<AppView>('todos')
+  const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS)
+  const [settingsDraft, setSettingsDraft] = useState<UserSettings>(DEFAULT_USER_SETTINGS)
+  const [isSettingsLoading, setIsSettingsLoading] = useState<boolean>(false)
+  const [isSettingsSaving, setIsSettingsSaving] = useState<boolean>(false)
+  const [settingsError, setSettingsError] = useState<string>('')
+  const [hasAppliedStartupSettings, setHasAppliedStartupSettings] = useState<boolean>(false)
   const isAuthenticated = authToken.length > 0
 
   const loadTodos = async (): Promise<void> => {
@@ -331,11 +368,26 @@ function App() {
     void loadTodos()
   }, [isAuthenticated])
 
-  const handleAuthenticated = (token: string, username: string): void => {
+  const handleAuthenticated = (
+    token: string,
+    username: string,
+    settings?: UserSettingsResponse,
+  ): void => {
     localStorage.setItem('token', token)
     localStorage.setItem('username', username)
     setAuthToken(token)
     setAuthUsername(username)
+    const normalizedSettings = normalizeSettings(settings)
+    setUserSettings(normalizedSettings)
+    setSettingsDraft(normalizedSettings)
+    setFilters((previous) => ({
+      ...previous,
+      hideCompleted: !normalizedSettings.showCompletedOnStartup,
+    }))
+    void i18n.changeLanguage(normalizedSettings.preferredLanguage)
+    setHasAppliedStartupSettings(true)
+    setActiveView('todos')
+    setSettingsError('')
     setError('')
   }
 
@@ -344,6 +396,20 @@ function App() {
     localStorage.removeItem('username')
     window.location.reload()
   }
+
+  const loadCurrentSettings = useCallback(async (): Promise<UserSettings | null> => {
+    if (!isAuthenticated) {
+      return null
+    }
+
+    const response = await fetchWithAuth('/api/settings')
+    if (!response.ok) {
+      return null
+    }
+
+    const data = (await response.json()) as UserSettingsResponse
+    return normalizeSettings(data)
+  }, [isAuthenticated])
 
   const { roots, descendantMap } = useMemo(() => buildTodoHierarchy(todos), [todos])
   const parentTodoIds = useMemo(
@@ -367,6 +433,132 @@ function App() {
     [selectedParentId, todos],
   )
   const visibleRoots = useMemo(() => filterTodoHierarchy(roots, filters), [roots, filters])
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      return
+    }
+
+    setActiveView('todos')
+    setUserSettings(DEFAULT_USER_SETTINGS)
+    setSettingsDraft(DEFAULT_USER_SETTINGS)
+    setSettingsError('')
+    setHasAppliedStartupSettings(false)
+    void i18n.changeLanguage('en')
+  }, [i18n, isAuthenticated])
+
+  useEffect(() => {
+    if (!isAuthenticated || hasAppliedStartupSettings) {
+      return
+    }
+
+    let isCancelled = false
+
+    const initializeSessionSettings = async (): Promise<void> => {
+      try {
+        const settings = await loadCurrentSettings()
+        if (!settings || isCancelled) {
+          return
+        }
+
+        setUserSettings(settings)
+        setSettingsDraft(settings)
+        setFilters((previous) => ({
+          ...previous,
+          hideCompleted: !settings.showCompletedOnStartup,
+        }))
+        void i18n.changeLanguage(settings.preferredLanguage)
+      } catch (settingsLoadError) {
+        console.error(settingsLoadError)
+      } finally {
+        if (!isCancelled) {
+          setHasAppliedStartupSettings(true)
+        }
+      }
+    }
+
+    void initializeSessionSettings()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [hasAppliedStartupSettings, i18n, isAuthenticated, loadCurrentSettings])
+
+  useEffect(() => {
+    if (!isAuthenticated || activeView !== 'settings') {
+      return
+    }
+
+    let isCancelled = false
+
+    const refreshSettingsForView = async (): Promise<void> => {
+      setIsSettingsLoading(true)
+      setSettingsError('')
+
+      try {
+        const settings = await loadCurrentSettings()
+        if (!settings) {
+          throw new Error(t('settings.errors.loadFailed'))
+        }
+
+        if (isCancelled) {
+          return
+        }
+
+        setUserSettings(settings)
+        setSettingsDraft(settings)
+      } catch (settingsLoadError) {
+        console.error(settingsLoadError)
+        if (!isCancelled) {
+          setSettingsError(t('settings.errors.loadFailed'))
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsSettingsLoading(false)
+        }
+      }
+    }
+
+    void refreshSettingsForView()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [activeView, isAuthenticated, loadCurrentSettings, t])
+
+  const handleSaveSettings = async (): Promise<void> => {
+    setIsSettingsSaving(true)
+    setSettingsError('')
+
+    const payload: UserSettings = {
+      preferredLanguage: normalizeLanguage(settingsDraft.preferredLanguage),
+      showCompletedOnStartup: settingsDraft.showCompletedOnStartup,
+    }
+
+    try {
+      const response = await fetchWithAuth('/api/settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        throw new Error(t('settings.errors.saveFailed'))
+      }
+
+      const saved = normalizeSettings((await response.json()) as UserSettingsResponse)
+      setUserSettings(saved)
+      setSettingsDraft(saved)
+      void i18n.changeLanguage(saved.preferredLanguage)
+    } catch (settingsSaveError) {
+      console.error(settingsSaveError)
+      setSettingsError(t('settings.errors.saveFailed'))
+    } finally {
+      setIsSettingsSaving(false)
+    }
+  }
 
   useEffect(() => {
     if (!showCreateForm) {
@@ -1035,6 +1227,16 @@ function App() {
     setFormAttachments([])
   }
 
+  const handleToggleSettingsView = (): void => {
+    if (activeView === 'settings') {
+      setActiveView('todos')
+      return
+    }
+
+    setSettingsDraft(userSettings)
+    setActiveView('settings')
+  }
+
   const uploadAttachments = async (todoId: number, files: File[]): Promise<void> => {
     if (files.length === 0) {
       return
@@ -1194,8 +1396,8 @@ function App() {
       <Header
         onRefresh={loadTodos}
         isRefreshing={isLoading}
-        onToggleCreate={handleToggleCreateForm}
-        isCreateVisible={showCreateForm}
+        onToggleSettingsView={handleToggleSettingsView}
+        isSettingsView={activeView === 'settings'}
         userName={authUsername}
         isAuthenticated={isAuthenticated}
         onLogout={handleLogout}
@@ -1206,9 +1408,9 @@ function App() {
           collapseAllLabel={allParentsCollapsed ? t('toolbar.expandAll') : t('toolbar.collapseAll')}
           isAllCollapsed={allParentsCollapsed}
           isCollapseToggleDisabled={parentTodoIds.length === 0}
-          onToggleAllCollapsed={handleToggleAllCollapsed}
+          onToggleAllCollapsed={activeView === 'todos' ? handleToggleAllCollapsed : undefined}
         >
-          <FilterPanel filters={filters} onFilterChange={setFilters} />
+          {activeView === 'todos' ? <FilterPanel filters={filters} onFilterChange={setFilters} /> : null}
         </Toolbar>
       ) : null}
 
@@ -1217,13 +1419,73 @@ function App() {
           <AuthForm onAuthenticated={handleAuthenticated} />
         ) : null}
 
-        {isAuthenticated && error ? (
+        {isAuthenticated && activeView === 'todos' && error ? (
           <div className="alert" role="alert">
             {error}
           </div>
         ) : null}
 
-        {isAuthenticated ? (
+        {isAuthenticated && activeView === 'settings' ? (
+          <section className="settings-panel" aria-live="polite">
+            <h2 className="settings-title">{t('settings.title')}</h2>
+            <p className="settings-description">{t('settings.description')}</p>
+            {isSettingsLoading ? <p className="loading">{t('settings.loading')}</p> : null}
+            {!isSettingsLoading ? (
+              <form
+                className="settings-form"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void handleSaveSettings()
+                }}
+              >
+                <label className="todo-field-label" htmlFor="settings-language">
+                  {t('settings.language')}
+                </label>
+                <select
+                  id="settings-language"
+                  className="todo-input"
+                  value={settingsDraft.preferredLanguage}
+                  onChange={(event) =>
+                    setSettingsDraft((previous) => ({
+                      ...previous,
+                      preferredLanguage: normalizeLanguage(event.target.value),
+                    }))
+                  }
+                  disabled={isSettingsSaving}
+                >
+                  <option value="en">English</option>
+                  <option value="pl">Polski</option>
+                </select>
+                <label className="settings-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settingsDraft.showCompletedOnStartup}
+                    onChange={(event) =>
+                      setSettingsDraft((previous) => ({
+                        ...previous,
+                        showCompletedOnStartup: event.target.checked,
+                      }))
+                    }
+                    disabled={isSettingsSaving}
+                  />
+                  <span>{t('settings.showCompletedOnStartup')}</span>
+                </label>
+                {settingsError ? (
+                  <p className="form-error" role="alert">
+                    {settingsError}
+                  </p>
+                ) : null}
+                <div className="settings-actions">
+                  <button className="primary-button" type="submit" disabled={isSettingsSaving}>
+                    {isSettingsSaving ? t('settings.saving') : t('settings.save')}
+                  </button>
+                </div>
+              </form>
+            ) : null}
+          </section>
+        ) : null}
+
+        {isAuthenticated && activeView === 'todos' ? (
           <Modal
             isOpen={showCreateForm}
             title={editingTodo ? t('modal.editTodo') : t('modal.createTodo')}
@@ -1268,11 +1530,11 @@ function App() {
           </Modal>
         ) : null}
 
-        {isAuthenticated && isLoading ? (
+        {isAuthenticated && activeView === 'todos' && isLoading ? (
           <p className="loading">{t('app.loading')}</p>
         ) : null}
 
-        {isAuthenticated && !isLoading ? (
+        {isAuthenticated && activeView === 'todos' && !isLoading ? (
           <TodoList
             todos={visibleRoots}
             descendantMap={descendantMap}
@@ -1300,6 +1562,22 @@ function App() {
           />
         ) : null}
       </section>
+      {isAuthenticated && activeView === 'todos' ? (
+        <button
+          className={`floating-create-button${showCreateForm ? ' is-active' : ''}`}
+          type="button"
+          onClick={handleToggleCreateForm}
+          aria-pressed={showCreateForm}
+          aria-label={
+            showCreateForm ? t('buttons.closeCreateModalAria') : t('buttons.openCreateModalAria')
+          }
+        >
+          <span className="floating-create-button-icon" aria-hidden="true">
+            {showCreateForm ? '×' : '+'}
+          </span>
+          <span>{showCreateForm ? t('buttons.cancel') : t('buttons.create')}</span>
+        </button>
+      ) : null}
       {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
     </div>
   )

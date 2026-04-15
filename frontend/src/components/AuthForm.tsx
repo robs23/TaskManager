@@ -7,10 +7,18 @@ type AuthMode = 'login' | 'register'
 interface LoginResponse {
   token: string
   username: string
+  settings?: {
+    preferredLanguage?: string
+    showCompletedOnStartup?: boolean
+  }
 }
 
 interface AuthFormProps {
-  onAuthenticated: (token: string, username: string) => void
+  onAuthenticated: (
+    token: string,
+    username: string,
+    settings?: { preferredLanguage?: string; showCompletedOnStartup?: boolean },
+  ) => void
 }
 
 function AuthForm({ onAuthenticated }: AuthFormProps) {
@@ -52,7 +60,7 @@ function AuthForm({ onAuthenticated }: AuthFormProps) {
           throw new Error(t('auth.errors.loginFailed'))
         }
 
-        onAuthenticated(data.token, data.username)
+        onAuthenticated(data.token, data.username, data.settings)
         return
       }
 

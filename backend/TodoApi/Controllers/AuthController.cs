@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using TodoApi.Contracts;
 using TodoApi.Data;
 using TodoApi.Models;
 
@@ -45,6 +46,7 @@ public class AuthController : ControllerBase
     {
         public string Token { get; set; } = string.Empty;
         public string Username { get; set; } = string.Empty;
+        public UserSettingsResponse Settings { get; set; } = new();
     }
 
     [HttpPost("register")]
@@ -78,6 +80,12 @@ public class AuthController : ControllerBase
         };
 
         _context.Users.Add(user);
+        _context.UserSettings.Add(new UserSettings
+        {
+            User = user,
+            PreferredLanguage = "en",
+            ShowCompletedOnStartup = false
+        });
         await _context.SaveChangesAsync();
 
         return Created(string.Empty, new RegisterResponse { UserId = user.Id });
@@ -102,12 +110,44 @@ public class AuthController : ControllerBase
             return Unauthorized("Invalid username or password.");
         }
 
+        var settings = await GetOrCreateSettingsAsync(user);
         var token = GenerateToken(user);
         return Ok(new LoginResponse
         {
             Token = token,
-            Username = user.Username
+            Username = user.Username,
+            Settings = ToSettingsResponse(settings)
         });
+    }
+
+    private async Task<UserSettings> GetOrCreateSettingsAsync(User user)
+    {
+        var settings = await _context.UserSettings
+            .SingleOrDefaultAsync(s => s.UserId == user.Id);
+        if (settings is not null)
+        {
+            return settings;
+        }
+
+        settings = new UserSettings
+        {
+            UserId = user.Id,
+            PreferredLanguage = "en",
+            ShowCompletedOnStartup = false
+        };
+
+        _context.UserSettings.Add(settings);
+        await _context.SaveChangesAsync();
+        return settings;
+    }
+
+    private static UserSettingsResponse ToSettingsResponse(UserSettings settings)
+    {
+        return new UserSettingsResponse
+        {
+            PreferredLanguage = settings.PreferredLanguage,
+            ShowCompletedOnStartup = settings.ShowCompletedOnStartup
+        };
     }
 
     private static string? NormalizeUsername(string? value)

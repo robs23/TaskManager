@@ -9,7 +9,8 @@
     "user": "User",
     "userName": "User Name",
     "language": "Language",
-    "logout": "Logout"
+    "logout": "Logout",
+    "logoAria": "Task Manager logo"
   },
   "auth": {
     "loginTitle": "Sign in",
@@ -57,7 +58,9 @@
     "delete": "Delete",
     "remove": "Remove",
     "removeRelated": "Remove",
-    "addSubtask": "Add subtask"
+    "addSubtask": "Add subtask",
+    "openCreateModalAria": "Open create todo modal",
+    "closeCreateModalAria": "Close create todo modal"
   },
   "form": {
     "newTask": "New task",
@@ -157,6 +160,21 @@
   },
   "toast": {
     "blockedByDependencies": "Cannot complete: finish all dependencies first"
+  },
+  "settings": {
+    "title": "Settings",
+    "description": "Choose your default app language and startup completed-task behavior.",
+    "open": "Settings",
+    "viewTodos": "Todos",
+    "language": "Language",
+    "showCompletedOnStartup": "Load completed tasks at startup",
+    "loading": "Loading settings...",
+    "save": "Save settings",
+    "saving": "Saving...",
+    "errors": {
+      "loadFailed": "Unable to load settings. Please try again.",
+      "saveFailed": "Unable to save settings. Please try again."
+    }
   }
 }
 

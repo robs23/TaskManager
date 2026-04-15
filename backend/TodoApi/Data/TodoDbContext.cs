@@ -13,6 +13,7 @@ public class TodoDbContext : DbContext
     public DbSet<Todo> Todos => Set<Todo>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserSettings> UserSettings => Set<UserSettings>();
     public DbSet<FileAttachment> FileAttachments => Set<FileAttachment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -27,6 +28,12 @@ public class TodoDbContext : DbContext
             .HasOne(t => t.User)
             .WithMany()
             .HasForeignKey(t => t.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<User>()
+            .HasOne(u => u.Settings)
+            .WithOne(s => s.User)
+            .HasForeignKey<UserSettings>(s => s.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<FileAttachment>()
@@ -103,6 +110,15 @@ public class TodoDbContext : DbContext
                 .UseCollation("NOCASE");
 
             entity.HasIndex(u => u.Username)
+                .IsUnique();
+        });
+
+        modelBuilder.Entity<UserSettings>(entity =>
+        {
+            entity.Property(s => s.PreferredLanguage)
+                .HasDefaultValue("en");
+
+            entity.HasIndex(s => s.UserId)
                 .IsUnique();
         });
 

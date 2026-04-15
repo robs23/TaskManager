@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using TodoApi.Contracts;
 using TodoApi.Controllers;
 using TodoApi.Data;
 using TodoApi.Models;
@@ -34,6 +35,11 @@ public class AuthControllerTests
         Assert.Equal("Alice", savedUser.Username);
         Assert.NotEqual("password123", savedUser.PasswordHash);
         Assert.StartsWith("$2", savedUser.PasswordHash, StringComparison.Ordinal);
+
+        var settings = await context.UserSettings.SingleAsync();
+        Assert.Equal(savedUser.Id, settings.UserId);
+        Assert.Equal("en", settings.PreferredLanguage);
+        Assert.False(settings.ShowCompletedOnStartup);
     }
 
     [Fact]
@@ -110,6 +116,14 @@ public class AuthControllerTests
         context.Users.Add(user);
         await context.SaveChangesAsync();
 
+        context.UserSettings.Add(new UserSettings
+        {
+            UserId = user.Id,
+            PreferredLanguage = "pl",
+            ShowCompletedOnStartup = true
+        });
+        await context.SaveChangesAsync();
+
         var controller = new AuthController(context, CreateConfiguration());
 
         var result = await controller.Login(new AuthController.LoginRequest
@@ -122,6 +136,9 @@ public class AuthControllerTests
         var response = Assert.IsType<AuthController.LoginResponse>(ok.Value);
         Assert.Equal("alice", response.Username);
         Assert.False(string.IsNullOrWhiteSpace(response.Token));
+        Assert.IsType<UserSettingsResponse>(response.Settings);
+        Assert.Equal("pl", response.Settings.PreferredLanguage);
+        Assert.True(response.Settings.ShowCompletedOnStartup);
 
         var token = new JwtSecurityTokenHandler().ReadJwtToken(response.Token);
         Assert.Contains(token.Claims, c => c.Type == ClaimTypes.NameIdentifier && c.Value == user.Id.ToString());
