@@ -22,8 +22,8 @@ public class SettingsControllerTests
             new User { Id = TestUserId, Username = "user1", PasswordHash = "hash" },
             new User { Id = 2, Username = "user2", PasswordHash = "hash" });
         context.UserSettings.AddRange(
-            new UserSettings { UserId = TestUserId, PreferredLanguage = "pl", ShowCompletedOnStartup = true },
-            new UserSettings { UserId = 2, PreferredLanguage = "en", ShowCompletedOnStartup = false });
+            new UserSettings { UserId = TestUserId, PreferredLanguage = "pl", ShowCompletedOnStartup = true, DefaultReminderOffsets = [60, 1440] },
+            new UserSettings { UserId = 2, PreferredLanguage = "en", ShowCompletedOnStartup = false, DefaultReminderOffsets = [15] });
         await context.SaveChangesAsync();
 
         var controller = CreateAuthenticatedController(context, TestUserId);
@@ -34,6 +34,7 @@ public class SettingsControllerTests
         var response = Assert.IsType<UserSettingsResponse>(ok.Value);
         Assert.Equal("pl", response.PreferredLanguage);
         Assert.True(response.ShowCompletedOnStartup);
+        Assert.Equal(new[] { 60, 1440 }, response.DefaultReminderOffsets);
     }
 
     [Fact]
@@ -45,8 +46,8 @@ public class SettingsControllerTests
             new User { Id = TestUserId, Username = "user1", PasswordHash = "hash" },
             new User { Id = 2, Username = "user2", PasswordHash = "hash" });
         context.UserSettings.AddRange(
-            new UserSettings { UserId = TestUserId, PreferredLanguage = "en", ShowCompletedOnStartup = false },
-            new UserSettings { UserId = 2, PreferredLanguage = "pl", ShowCompletedOnStartup = true });
+            new UserSettings { UserId = TestUserId, PreferredLanguage = "en", ShowCompletedOnStartup = false, DefaultReminderOffsets = [30] },
+            new UserSettings { UserId = 2, PreferredLanguage = "pl", ShowCompletedOnStartup = true, DefaultReminderOffsets = [5, 10] });
         await context.SaveChangesAsync();
 
         var controller = CreateAuthenticatedController(context, TestUserId);
@@ -54,20 +55,24 @@ public class SettingsControllerTests
         var result = await controller.UpdateSettings(new UpdateUserSettingsRequest
         {
             PreferredLanguage = "  PL-PL  ",
-            ShowCompletedOnStartup = true
+            ShowCompletedOnStartup = true,
+            DefaultReminderOffsets = [15, 60, 15, -10]
         });
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<UserSettingsResponse>(ok.Value);
         Assert.Equal("pl-pl", response.PreferredLanguage);
         Assert.True(response.ShowCompletedOnStartup);
+        Assert.Equal(new[] { 15, 60 }, response.DefaultReminderOffsets);
 
         var mySettings = await context.UserSettings.SingleAsync(s => s.UserId == TestUserId);
         var otherSettings = await context.UserSettings.SingleAsync(s => s.UserId == 2);
         Assert.Equal("pl-pl", mySettings.PreferredLanguage);
         Assert.True(mySettings.ShowCompletedOnStartup);
+        Assert.Equal(new[] { 15, 60 }, mySettings.DefaultReminderOffsets);
         Assert.Equal("pl", otherSettings.PreferredLanguage);
         Assert.True(otherSettings.ShowCompletedOnStartup);
+        Assert.Equal(new[] { 5, 10 }, otherSettings.DefaultReminderOffsets);
     }
 
     [Fact]
@@ -85,9 +90,11 @@ public class SettingsControllerTests
         var response = Assert.IsType<UserSettingsResponse>(ok.Value);
         Assert.Equal("en", response.PreferredLanguage);
         Assert.False(response.ShowCompletedOnStartup);
+        Assert.Empty(response.DefaultReminderOffsets);
         var persisted = await context.UserSettings.SingleAsync(s => s.UserId == TestUserId);
         Assert.Equal("en", persisted.PreferredLanguage);
         Assert.False(persisted.ShowCompletedOnStartup);
+        Assert.Empty(persisted.DefaultReminderOffsets);
     }
 
     private static TodoDbContext CreateContext(string databaseName)

@@ -40,6 +40,7 @@ public class AuthControllerTests
         Assert.Equal(savedUser.Id, settings.UserId);
         Assert.Equal("en", settings.PreferredLanguage);
         Assert.False(settings.ShowCompletedOnStartup);
+        Assert.Empty(settings.DefaultReminderOffsets);
     }
 
     [Fact]
@@ -120,7 +121,8 @@ public class AuthControllerTests
         {
             UserId = user.Id,
             PreferredLanguage = "pl",
-            ShowCompletedOnStartup = true
+            ShowCompletedOnStartup = true,
+            DefaultReminderOffsets = [30, 1440]
         });
         await context.SaveChangesAsync();
 
@@ -139,6 +141,7 @@ public class AuthControllerTests
         Assert.IsType<UserSettingsResponse>(response.Settings);
         Assert.Equal("pl", response.Settings.PreferredLanguage);
         Assert.True(response.Settings.ShowCompletedOnStartup);
+        Assert.Equal(new[] { 30, 1440 }, response.Settings.DefaultReminderOffsets);
 
         var token = new JwtSecurityTokenHandler().ReadJwtToken(response.Token);
         Assert.Contains(token.Claims, c => c.Type == ClaimTypes.NameIdentifier && c.Value == user.Id.ToString());

@@ -43,6 +43,7 @@ public class SettingsController : ControllerBase
         var settings = await GetOrCreateSettingsAsync(userId);
         settings.PreferredLanguage = NormalizeLanguage(request?.PreferredLanguage);
         settings.ShowCompletedOnStartup = request?.ShowCompletedOnStartup ?? false;
+        settings.DefaultReminderOffsets = request?.DefaultReminderOffsets ?? [];
 
         await _context.SaveChangesAsync();
         return Ok(ToResponse(settings));
@@ -60,7 +61,8 @@ public class SettingsController : ControllerBase
         {
             UserId = userId,
             PreferredLanguage = "en",
-            ShowCompletedOnStartup = false
+            ShowCompletedOnStartup = false,
+            DefaultReminderOffsets = []
         };
 
         _context.UserSettings.Add(settings);
@@ -73,7 +75,8 @@ public class SettingsController : ControllerBase
         return new UserSettingsResponse
         {
             PreferredLanguage = settings.PreferredLanguage,
-            ShowCompletedOnStartup = settings.ShowCompletedOnStartup
+            ShowCompletedOnStartup = settings.ShowCompletedOnStartup,
+            DefaultReminderOffsets = settings.DefaultReminderOffsets
         };
     }
 

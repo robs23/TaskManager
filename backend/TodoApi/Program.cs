@@ -43,6 +43,7 @@ builder.Services
     });
 builder.Services.AddAuthorization();
 builder.Services.AddSingleton<IFileStorageService, FileStorageService>();
+builder.Services.AddHostedService<ReminderService>();
 
 var app = builder.Build();
 

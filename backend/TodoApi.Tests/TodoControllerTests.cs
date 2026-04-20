@@ -241,6 +241,54 @@ public class TodoControllerTests
     }
 
     [Fact]
+    public async Task CreateTodo_WithDeadline_AutoCreatesDefaultBeforeDeadlineReminders()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        context.Users.Add(new User { Id = TestUserId, Username = "user1", PasswordHash = "hash" });
+        context.UserSettings.Add(new UserSettings { UserId = TestUserId, DefaultReminderOffsets = [60, 1440] });
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+        var deadline = DateTime.UtcNow.AddDays(3);
+
+        var result = await controller.CreateTodo(new TodoController.CreateTodoRequest
+        {
+            Name = "Todo with defaults",
+            Deadline = deadline
+        });
+
+        Assert.IsType<CreatedAtActionResult>(result.Result);
+        var reminders = await context.Reminders
+            .OrderBy(r => r.OffsetMinutes)
+            .ToListAsync();
+        Assert.Equal(2, reminders.Count);
+        Assert.Equal(new int?[] { 60, 1440 }, reminders.Select(r => r.OffsetMinutes).ToArray());
+        Assert.All(reminders, reminder => Assert.Equal(ReminderType.BeforeDeadline, reminder.Type));
+        Assert.Equal(deadline.AddMinutes(-60), reminders[0].ReminderDateTimeUtc);
+        Assert.Equal(deadline.AddMinutes(-1440), reminders[1].ReminderDateTimeUtc);
+    }
+
+    [Fact]
+    public async Task CreateTodo_WithDeadlineAndEmptyDefaults_DoesNotCreateReminders()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        context.Users.Add(new User { Id = TestUserId, Username = "user1", PasswordHash = "hash" });
+        context.UserSettings.Add(new UserSettings { UserId = TestUserId, DefaultReminderOffsets = [] });
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.CreateTodo(new TodoController.CreateTodoRequest
+        {
+            Name = "Todo with no default reminders",
+            Deadline = DateTime.UtcNow.AddDays(2)
+        });
+
+        Assert.IsType<CreatedAtActionResult>(result.Result);
+        Assert.Empty(context.Reminders);
+    }
+
+    [Fact]
     public async Task CreateTodo_ReturnsBadRequestWhenParentBelongsToDifferentUser()
     {
         var databaseName = Guid.NewGuid().ToString();
@@ -306,6 +354,225 @@ public class TodoControllerTests
         Assert.Equal("Updated notes", updated.Notes);
         Assert.Equal(newParent.Id, updated.ParentId);
         Assert.True(updated.IsCompleted);
+    }
+
+    [Fact]
+    public async Task UpdateTodo_ChangingDeadline_RecomputesBeforeDeadlineReminders()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var oldDeadline = DateTime.UtcNow.AddDays(2);
+        var newDeadline = oldDeadline.AddDays(1);
+        var todo = new Todo
+        {
+            UserId = TestUserId,
+            Name = "Main",
+            Deadline = oldDeadline,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        var reminderA = new Reminder
+        {
+            TodoId = todo.Id,
+            UserId = TestUserId,
+            Type = ReminderType.BeforeDeadline,
+            OffsetMinutes = 60,
+            ReminderDateTimeUtc = oldDeadline.AddMinutes(-60),
+            IsSent = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        var reminderB = new Reminder
+        {
+            TodoId = todo.Id,
+            UserId = TestUserId,
+            Type = ReminderType.BeforeDeadline,
+            OffsetMinutes = 180,
+            ReminderDateTimeUtc = oldDeadline.AddMinutes(-180),
+            IsSent = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Reminders.AddRange(reminderA, reminderB);
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+        var result = await controller.UpdateTodo(todo.Id, new TodoController.UpdateTodoRequest
+        {
+            Name = "Main",
+            Deadline = newDeadline,
+            IsCompleted = false
+        });
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        var reminders = await context.Reminders
+            .Where(r => r.TodoId == todo.Id)
+            .OrderBy(r => r.OffsetMinutes)
+            .ToListAsync();
+        Assert.Equal(2, reminders.Count);
+        Assert.Equal(newDeadline.AddMinutes(-60), reminders[0].ReminderDateTimeUtc);
+        Assert.False(reminders[0].IsSent);
+        Assert.Equal(newDeadline.AddMinutes(-180), reminders[1].ReminderDateTimeUtc);
+        Assert.False(reminders[1].IsSent);
+    }
+
+    [Fact]
+    public async Task UpdateTodo_RemovingDeadline_DeletesBeforeDeadlineReminders()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var deadline = DateTime.UtcNow.AddDays(2);
+        var todo = new Todo
+        {
+            UserId = TestUserId,
+            Name = "Main",
+            Deadline = deadline,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        context.Reminders.Add(new Reminder
+        {
+            TodoId = todo.Id,
+            UserId = TestUserId,
+            Type = ReminderType.BeforeDeadline,
+            OffsetMinutes = 30,
+            ReminderDateTimeUtc = deadline.AddMinutes(-30),
+            IsSent = false,
+            CreatedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+        var result = await controller.UpdateTodo(todo.Id, new TodoController.UpdateTodoRequest
+        {
+            Name = "Main",
+            Deadline = null,
+            IsCompleted = false
+        });
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Empty(context.Reminders);
+    }
+
+    [Fact]
+    public async Task UpdateTodo_ChangingDeadline_DoesNotAffectFixedTimeReminders()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var oldDeadline = DateTime.UtcNow.AddDays(2);
+        var todo = new Todo
+        {
+            UserId = TestUserId,
+            Name = "Main",
+            Deadline = oldDeadline,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+
+        var fixedReminderTime = DateTime.UtcNow.AddHours(3);
+        var fixedReminder = new Reminder
+        {
+            TodoId = todo.Id,
+            UserId = TestUserId,
+            Type = ReminderType.FixedTime,
+            OffsetMinutes = null,
+            ReminderDateTimeUtc = fixedReminderTime,
+            IsSent = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Reminders.Add(fixedReminder);
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+        var result = await controller.UpdateTodo(todo.Id, new TodoController.UpdateTodoRequest
+        {
+            Name = "Main",
+            Deadline = oldDeadline.AddDays(1),
+            IsCompleted = false
+        });
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        var savedReminder = await context.Reminders.SingleAsync();
+        Assert.Equal(ReminderType.FixedTime, savedReminder.Type);
+        Assert.Equal(fixedReminderTime, savedReminder.ReminderDateTimeUtc);
+        Assert.True(savedReminder.IsSent);
+    }
+
+    [Fact]
+    public async Task UpdateTodo_SettingDeadlineFromNull_AutoCreatesDefaultBeforeDeadlineReminders()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        context.Users.Add(new User { Id = TestUserId, Username = "user1", PasswordHash = "hash" });
+        context.UserSettings.Add(new UserSettings { UserId = TestUserId, DefaultReminderOffsets = [15, 45] });
+        var todo = new Todo { UserId = TestUserId, Name = "Main", Deadline = null, CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+        var deadline = DateTime.UtcNow.AddDays(1);
+
+        var result = await controller.UpdateTodo(todo.Id, new TodoController.UpdateTodoRequest
+        {
+            Name = "Main",
+            Deadline = deadline,
+            IsCompleted = false
+        });
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        var reminders = await context.Reminders
+            .Where(r => r.TodoId == todo.Id)
+            .OrderBy(r => r.OffsetMinutes)
+            .ToListAsync();
+        Assert.Equal(2, reminders.Count);
+        Assert.Equal(new int?[] { 15, 45 }, reminders.Select(r => r.OffsetMinutes).ToArray());
+        Assert.Equal(deadline.AddMinutes(-15), reminders[0].ReminderDateTimeUtc);
+        Assert.Equal(deadline.AddMinutes(-45), reminders[1].ReminderDateTimeUtc);
+    }
+
+    [Fact]
+    public async Task UpdateTodo_ChangingDeadline_AutoCreationSkipsExistingOffsetReminder()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        context.Users.Add(new User { Id = TestUserId, Username = "user1", PasswordHash = "hash" });
+        context.UserSettings.Add(new UserSettings { UserId = TestUserId, DefaultReminderOffsets = [60, 120] });
+        var oldDeadline = DateTime.UtcNow.AddDays(2);
+        var newDeadline = oldDeadline.AddDays(2);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", Deadline = oldDeadline, CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        context.Reminders.Add(new Reminder
+        {
+            TodoId = todo.Id,
+            UserId = TestUserId,
+            Type = ReminderType.BeforeDeadline,
+            OffsetMinutes = 60,
+            ReminderDateTimeUtc = oldDeadline.AddMinutes(-60),
+            IsSent = true,
+            CreatedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.UpdateTodo(todo.Id, new TodoController.UpdateTodoRequest
+        {
+            Name = "Main",
+            Deadline = newDeadline,
+            IsCompleted = false
+        });
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        var reminders = await context.Reminders
+            .Where(r => r.TodoId == todo.Id)
+            .OrderBy(r => r.OffsetMinutes)
+            .ToListAsync();
+        Assert.Equal(2, reminders.Count);
+        Assert.Equal(new int?[] { 60, 120 }, reminders.Select(r => r.OffsetMinutes).ToArray());
+        Assert.Equal(newDeadline.AddMinutes(-60), reminders[0].ReminderDateTimeUtc);
+        Assert.Equal(newDeadline.AddMinutes(-120), reminders[1].ReminderDateTimeUtc);
     }
 
     [Fact]
@@ -660,6 +927,287 @@ public class TodoControllerTests
         Assert.Equal(2048, attachment.FileSize);
         Assert.Equal("application/pdf", attachment.ContentType);
         Assert.Empty(withoutAttachmentResponse.Attachments);
+    }
+
+    [Fact]
+    public async Task CreateReminder_BeforeDeadline_ComputesReminderDateTimeAndPersists()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var deadline = new DateTime(2032, 4, 10, 15, 0, 0, DateTimeKind.Utc);
+        var todo = new Todo { UserId = TestUserId, Name = "With deadline", Deadline = deadline, CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.CreateReminder(
+            todo.Id,
+            new TodoController.CreateReminderRequest(ReminderType.BeforeDeadline, 60, null));
+
+        var created = Assert.IsType<CreatedAtActionResult>(result.Result);
+        var response = Assert.IsType<TodoController.ReminderResponse>(created.Value);
+        Assert.Equal(ReminderType.BeforeDeadline, response.Type);
+        Assert.Equal(60, response.OffsetMinutes);
+        Assert.Equal(deadline.AddMinutes(-60), response.ReminderDateTimeUtc);
+        Assert.False(response.IsSent);
+
+        var saved = await context.Reminders.SingleAsync();
+        Assert.Equal(todo.Id, saved.TodoId);
+        Assert.Equal(TestUserId, saved.UserId);
+        Assert.Equal(ReminderType.BeforeDeadline, saved.Type);
+        Assert.Equal(60, saved.OffsetMinutes);
+        Assert.Equal(deadline.AddMinutes(-60), saved.ReminderDateTimeUtc);
+    }
+
+    [Fact]
+    public async Task CreateReminder_FixedTime_CreatesReminderWhenFuture()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Any todo", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+        var reminderDateTimeUtc = DateTime.UtcNow.AddHours(2);
+
+        var result = await controller.CreateReminder(
+            todo.Id,
+            new TodoController.CreateReminderRequest(ReminderType.FixedTime, null, reminderDateTimeUtc));
+
+        var created = Assert.IsType<CreatedAtActionResult>(result.Result);
+        var response = Assert.IsType<TodoController.ReminderResponse>(created.Value);
+        Assert.Equal(ReminderType.FixedTime, response.Type);
+        Assert.Null(response.OffsetMinutes);
+        Assert.Equal(reminderDateTimeUtc, response.ReminderDateTimeUtc);
+        Assert.False(response.IsSent);
+    }
+
+    [Fact]
+    public async Task CreateReminder_BeforeDeadline_ReturnsBadRequestWhenTodoHasNoDeadline()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "No deadline", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.CreateReminder(
+            todo.Id,
+            new TodoController.CreateReminderRequest(ReminderType.BeforeDeadline, 30, null));
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(context.Reminders);
+    }
+
+    [Fact]
+    public async Task CreateReminder_BeforeDeadline_ReturnsBadRequestWhenOffsetNotPositive()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo
+        {
+            UserId = TestUserId,
+            Name = "With deadline",
+            Deadline = DateTime.UtcNow.AddDays(1),
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.CreateReminder(
+            todo.Id,
+            new TodoController.CreateReminderRequest(ReminderType.BeforeDeadline, 0, null));
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(context.Reminders);
+    }
+
+    [Fact]
+    public async Task CreateReminder_FixedTime_ReturnsBadRequestWhenDateIsInPast()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.CreateReminder(
+            todo.Id,
+            new TodoController.CreateReminderRequest(ReminderType.FixedTime, null, DateTime.UtcNow.AddMinutes(-5)));
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(context.Reminders);
+    }
+
+    [Fact]
+    public async Task GetReminders_ReturnsTodoRemindersOrderedByReminderDateTime()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        var otherTodo = new Todo { UserId = TestUserId, Name = "Other", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(todo, otherTodo);
+        await context.SaveChangesAsync();
+
+        var later = new Reminder
+        {
+            TodoId = todo.Id,
+            UserId = TestUserId,
+            Type = ReminderType.FixedTime,
+            ReminderDateTimeUtc = DateTime.UtcNow.AddHours(3),
+            IsSent = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        var sooner = new Reminder
+        {
+            TodoId = todo.Id,
+            UserId = TestUserId,
+            Type = ReminderType.FixedTime,
+            ReminderDateTimeUtc = DateTime.UtcNow.AddHours(1),
+            IsSent = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        var otherTodoReminder = new Reminder
+        {
+            TodoId = otherTodo.Id,
+            UserId = TestUserId,
+            Type = ReminderType.FixedTime,
+            ReminderDateTimeUtc = DateTime.UtcNow.AddHours(2),
+            IsSent = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Reminders.AddRange(later, sooner, otherTodoReminder);
+        await context.SaveChangesAsync();
+
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.GetReminders(todo.Id);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var reminders = Assert.IsAssignableFrom<IEnumerable<TodoController.ReminderResponse>>(okResult.Value).ToList();
+        Assert.Equal(2, reminders.Count);
+        Assert.Equal(new[] { sooner.Id, later.Id }, reminders.Select(reminder => reminder.Id).ToArray());
+    }
+
+    [Fact]
+    public async Task DeleteReminder_RemovesReminderAndReturnsNoContent()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var reminder = new Reminder
+        {
+            TodoId = todo.Id,
+            UserId = TestUserId,
+            Type = ReminderType.FixedTime,
+            ReminderDateTimeUtc = DateTime.UtcNow.AddHours(1),
+            IsSent = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Reminders.Add(reminder);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.DeleteReminder(todo.Id, reminder.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Empty(context.Reminders);
+    }
+
+    [Fact]
+    public async Task DeleteReminder_ReturnsNotFoundWhenReminderBelongsToDifferentUser()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = 2, Name = "Other", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var reminder = new Reminder
+        {
+            TodoId = todo.Id,
+            UserId = 2,
+            Type = ReminderType.FixedTime,
+            ReminderDateTimeUtc = DateTime.UtcNow.AddHours(2),
+            IsSent = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Reminders.Add(reminder);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.DeleteReminder(todo.Id, reminder.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.Single(context.Reminders);
+    }
+
+    [Fact]
+    public async Task GetTodo_IncludesRemindersInResponse()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var todo = new Todo { UserId = TestUserId, Name = "Main", CreatedAt = DateTime.UtcNow };
+        context.Todos.Add(todo);
+        await context.SaveChangesAsync();
+        var reminder = new Reminder
+        {
+            TodoId = todo.Id,
+            UserId = TestUserId,
+            Type = ReminderType.BeforeDeadline,
+            OffsetMinutes = 45,
+            ReminderDateTimeUtc = DateTime.UtcNow.AddHours(5),
+            IsSent = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.Reminders.Add(reminder);
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.GetTodo(todo.Id);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var fetched = Assert.IsType<TodoController.TodoResponse>(okResult.Value);
+        var fetchedReminder = Assert.Single(fetched.Reminders);
+        Assert.Equal(reminder.Id, fetchedReminder.Id);
+        Assert.Equal(ReminderType.BeforeDeadline, fetchedReminder.Type);
+        Assert.Equal(45, fetchedReminder.OffsetMinutes);
+        Assert.True(fetchedReminder.IsSent);
+    }
+
+    [Fact]
+    public async Task GetTodos_IncludesRemindersPerTodo()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        await using var context = CreateContext(databaseName);
+        var withReminder = new Todo { UserId = TestUserId, Name = "With reminder", CreatedAt = DateTime.UtcNow };
+        var withoutReminder = new Todo { UserId = TestUserId, Name = "Without reminder", CreatedAt = DateTime.UtcNow };
+        context.Todos.AddRange(withReminder, withoutReminder);
+        await context.SaveChangesAsync();
+        context.Reminders.Add(new Reminder
+        {
+            TodoId = withReminder.Id,
+            UserId = TestUserId,
+            Type = ReminderType.FixedTime,
+            ReminderDateTimeUtc = DateTime.UtcNow.AddHours(1),
+            IsSent = false,
+            CreatedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+        var controller = CreateAuthenticatedController(context);
+
+        var result = await controller.GetTodos();
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var todos = Assert.IsAssignableFrom<IEnumerable<TodoController.TodoResponse>>(okResult.Value).ToList();
+        var withReminderResponse = todos.Single(todo => todo.Id == withReminder.Id);
+        var withoutReminderResponse = todos.Single(todo => todo.Id == withoutReminder.Id);
+        Assert.Single(withReminderResponse.Reminders);
+        Assert.Empty(withoutReminderResponse.Reminders);
     }
 
     [Fact]

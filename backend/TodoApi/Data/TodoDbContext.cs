@@ -15,6 +15,8 @@ public class TodoDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<UserSettings> UserSettings => Set<UserSettings>();
     public DbSet<FileAttachment> FileAttachments => Set<FileAttachment>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
+    public DbSet<Reminder> Reminders => Set<Reminder>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -41,6 +43,32 @@ public class TodoDbContext : DbContext
             .WithMany(t => t.Attachments)
             .HasForeignKey(f => f.TodoId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Reminder>(entity =>
+        {
+            entity.HasOne(r => r.Todo)
+                .WithMany(t => t.Reminders)
+                .HasForeignKey(r => r.TodoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(r => new { r.ReminderDateTimeUtc, r.IsSent });
+        });
+
+        modelBuilder.Entity<PushSubscription>(entity =>
+        {
+            entity.HasOne(ps => ps.User)
+                .WithMany()
+                .HasForeignKey(ps => ps.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(ps => new { ps.UserId, ps.Endpoint })
+                .IsUnique();
+        });
 
         modelBuilder.Entity<Todo>()
             .HasMany(t => t.Dependencies)
@@ -117,6 +145,9 @@ public class TodoDbContext : DbContext
         {
             entity.Property(s => s.PreferredLanguage)
                 .HasDefaultValue("en");
+            entity.Property(s => s.DefaultReminderOffsetsJson)
+                .HasColumnName("DefaultReminderOffsets")
+                .HasDefaultValue("[]");
 
             entity.HasIndex(s => s.UserId)
                 .IsUnique();

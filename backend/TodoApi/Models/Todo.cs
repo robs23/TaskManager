@@ -22,6 +22,7 @@ public class Todo
     public ICollection<Todo> RelatedByTodos { get; set; } = new List<Todo>();
     public ICollection<Tag> Tags { get; set; } = new List<Tag>();
     public ICollection<FileAttachment> Attachments { get; set; } = new List<FileAttachment>();
+    public ICollection<Reminder> Reminders { get; set; } = new List<Reminder>();
     public User? User { get; set; }
 
     [NotMapped]

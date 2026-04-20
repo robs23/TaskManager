@@ -159,7 +159,10 @@
     "editTodo": "Edytuj zadanie"
   },
   "toast": {
-    "blockedByDependencies": "Nie można ukończyć: najpierw zakończ wszystkie zależności"
+    "blockedByDependencies": "Nie można ukończyć: najpierw zakończ wszystkie zależności",
+    "offline": "Jesteś offline. Zmiany nie mogą być zapisane.",
+    "online": "Połączenie przywrócone.",
+    "offlineAction": "Nie można wykonać tej akcji w trybie offline."
   },
   "settings": {
     "title": "Ustawienia",
@@ -167,6 +170,9 @@
     "open": "Ustawienia",
     "viewTodos": "Zadania",
     "language": "Język",
+    "pushNotifications": "Powiadomienia push",
+    "pushEnabled": "Włącz powiadomienia push",
+    "pushDenied": "Powiadomienia są zablokowane w ustawieniach przeglądarki",
     "showCompletedOnStartup": "Ładuj ukończone zadania przy starcie",
     "loading": "Ładowanie ustawień...",
     "save": "Zapisz ustawienia",

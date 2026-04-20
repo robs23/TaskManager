@@ -84,7 +84,8 @@ public class AuthController : ControllerBase
         {
             User = user,
             PreferredLanguage = "en",
-            ShowCompletedOnStartup = false
+            ShowCompletedOnStartup = false,
+            DefaultReminderOffsets = []
         });
         await _context.SaveChangesAsync();
 
@@ -133,7 +134,8 @@ public class AuthController : ControllerBase
         {
             UserId = user.Id,
             PreferredLanguage = "en",
-            ShowCompletedOnStartup = false
+            ShowCompletedOnStartup = false,
+            DefaultReminderOffsets = []
         };
 
         _context.UserSettings.Add(settings);
@@ -146,7 +148,8 @@ public class AuthController : ControllerBase
         return new UserSettingsResponse
         {
             PreferredLanguage = settings.PreferredLanguage,
-            ShowCompletedOnStartup = settings.ShowCompletedOnStartup
+            ShowCompletedOnStartup = settings.ShowCompletedOnStartup,
+            DefaultReminderOffsets = settings.DefaultReminderOffsets
         };
     }
 

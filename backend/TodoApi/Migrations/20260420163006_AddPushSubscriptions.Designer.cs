@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TodoApi.Data;
 
@@ -10,9 +11,11 @@ using TodoApi.Data;
 namespace TodoApi.Migrations
 {
     [DbContext(typeof(TodoDbContext))]
-    partial class TodoDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260420163006_AddPushSubscriptions")]
+    partial class AddPushSubscriptions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.3");
@@ -81,44 +84,6 @@ namespace TodoApi.Migrations
                         .IsUnique();
 
                     b.ToTable("PushSubscriptions");
-                });
-
-            modelBuilder.Entity("TodoApi.Models.Reminder", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsSent")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("OffsetMinutes")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime?>("ReminderDateTimeUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("TodoId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TodoId");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("ReminderDateTimeUtc", "IsSent");
-
-                    b.ToTable("Reminders");
                 });
 
             modelBuilder.Entity("TodoApi.Models.Tag", b =>
@@ -215,13 +180,6 @@ namespace TodoApi.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("DefaultReminderOffsetsJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("[]")
-                        .HasColumnName("DefaultReminderOffsets");
-
                     b.Property<string>("PreferredLanguage")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -315,25 +273,6 @@ namespace TodoApi.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("TodoApi.Models.Reminder", b =>
-                {
-                    b.HasOne("TodoApi.Models.Todo", "Todo")
-                        .WithMany("Reminders")
-                        .HasForeignKey("TodoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("TodoApi.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Todo");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("TodoApi.Models.Todo", b =>
                 {
                     b.HasOne("TodoApi.Models.Todo", "Parent")
@@ -413,8 +352,6 @@ namespace TodoApi.Migrations
                     b.Navigation("Attachments");
 
                     b.Navigation("Children");
-
-                    b.Navigation("Reminders");
                 });
 
             modelBuilder.Entity("TodoApi.Models.User", b =>

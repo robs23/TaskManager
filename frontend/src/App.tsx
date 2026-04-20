@@ -127,6 +127,26 @@ const DEFAULT_USER_SETTINGS: UserSettings = {
 
 const normalizeTag = (value: string): string => value.trim().toLowerCase()
 
+const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = `${base64String}${padding}`.replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let index = 0; index < rawData.length; index += 1) {
+    outputArray[index] = rawData.charCodeAt(index)
+  }
+
+  return outputArray
+}
+
+const uint8ArrayToBase64 = (value: Uint8Array): string => {
+  let binary = ''
+  value.forEach((byte) => {
+    binary += String.fromCharCode(byte)
+  })
+  return window.btoa(binary)
+}
+
 const normalizeTagList = (tags: string[]): string[] => {
   const deduped = new Set<string>()
   tags.forEach((tag) => {
@@ -327,6 +347,7 @@ function App() {
   const [attachmentError, setAttachmentError] = useState<string>('')
   const [formAttachments, setFormAttachments] = useState<AttachmentSummary[]>([])
   const [toast, setToast] = useState<string | null>(null)
+  const [isOffline, setIsOffline] = useState<boolean>(() => !window.navigator.onLine)
   const [highlightedTodoIds, setHighlightedTodoIds] = useState<Set<number>>(new Set<number>())
   const [activeView, setActiveView] = useState<AppView>('todos')
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS)
@@ -335,6 +356,12 @@ function App() {
   const [isSettingsSaving, setIsSettingsSaving] = useState<boolean>(false)
   const [settingsError, setSettingsError] = useState<string>('')
   const [hasAppliedStartupSettings, setHasAppliedStartupSettings] = useState<boolean>(false)
+  const [pushEnabled, setPushEnabled] = useState<boolean>(false)
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>(() =>
+    'Notification' in window ? Notification.permission : 'default',
+  )
+  const [isPushUpdating, setIsPushUpdating] = useState<boolean>(false)
+  const isPushSupported = 'serviceWorker' in navigator && 'PushManager' in window
   const isAuthenticated = authToken.length > 0
 
   const loadTodos = async (): Promise<void> => {
@@ -526,6 +553,132 @@ function App() {
     }
   }, [activeView, isAuthenticated, loadCurrentSettings, t])
 
+  useEffect(() => {
+    if (!isAuthenticated || activeView !== 'settings' || !isPushSupported) {
+      if (activeView === 'settings') {
+        setPushEnabled(false)
+      }
+      return
+    }
+
+    let isCancelled = false
+
+    const initializePushSubscriptionState = async (): Promise<void> => {
+      setPushPermission(Notification.permission)
+      try {
+        const registration = await navigator.serviceWorker.ready
+        const subscription = await registration.pushManager.getSubscription()
+        if (!isCancelled) {
+          setPushEnabled(Boolean(subscription))
+        }
+      } catch (pushInitError) {
+        console.error(pushInitError)
+        if (!isCancelled) {
+          setPushEnabled(false)
+        }
+      }
+    }
+
+    void initializePushSubscriptionState()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [activeView, isAuthenticated, isPushSupported])
+
+  const handlePushToggle = async (enabled: boolean): Promise<void> => {
+    if (!isPushSupported) {
+      return
+    }
+
+    setSettingsError('')
+    setIsPushUpdating(true)
+
+    try {
+      const registration = await navigator.serviceWorker.ready
+
+      if (enabled) {
+        const vapidResponse = await fetchWithAuth('/api/push/vapid-public-key')
+        if (!vapidResponse.ok) {
+          throw new Error('Unable to load VAPID public key.')
+        }
+
+        const vapidPublicKey = (await vapidResponse.text()).trim()
+        if (!vapidPublicKey) {
+          throw new Error('VAPID public key is missing.')
+        }
+
+        const permission = await Notification.requestPermission()
+        setPushPermission(permission)
+        if (permission !== 'granted') {
+          setPushEnabled(false)
+          return
+        }
+
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        })
+
+        const p256dhKey = subscription.getKey('p256dh')
+        const authKey = subscription.getKey('auth')
+
+        if (!p256dhKey || !authKey) {
+          throw new Error('Push subscription keys are unavailable.')
+        }
+
+        const subscribeResponse = await fetchWithAuth('/api/push/subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            endpoint: subscription.endpoint,
+            p256dh: uint8ArrayToBase64(new Uint8Array(p256dhKey)),
+            auth: uint8ArrayToBase64(new Uint8Array(authKey)),
+          }),
+        })
+
+        if (!subscribeResponse.ok) {
+          throw new Error('Failed to register push subscription.')
+        }
+
+        setPushEnabled(true)
+        return
+      }
+
+      const subscription = await registration.pushManager.getSubscription()
+      if (subscription) {
+        const unsubscribeSucceeded = await subscription.unsubscribe()
+        if (!unsubscribeSucceeded) {
+          throw new Error('Browser failed to unsubscribe push subscription.')
+        }
+
+        const unsubscribeResponse = await fetchWithAuth('/api/push/unsubscribe', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            endpoint: subscription.endpoint,
+          }),
+        })
+
+        if (!unsubscribeResponse.ok && unsubscribeResponse.status !== 404) {
+          throw new Error('Failed to remove push subscription from server.')
+        }
+      }
+
+      setPushPermission(Notification.permission)
+      setPushEnabled(false)
+    } catch (pushToggleError) {
+      console.error(pushToggleError)
+      setSettingsError(t('settings.errors.saveFailed'))
+    } finally {
+      setIsPushUpdating(false)
+    }
+  }
+
   const handleSaveSettings = async (): Promise<void> => {
     setIsSettingsSaving(true)
     setSettingsError('')
@@ -580,6 +733,27 @@ function App() {
 
     setFormAttachments([])
   }, [editingTodo, showCreateForm])
+
+  useEffect(() => {
+    const handleOnline = (): void => {
+      setIsOffline(false)
+      setToast(t('toast.online'))
+    }
+
+    const handleOffline = (): void => {
+      setIsOffline(true)
+      setToast(t('toast.offline'))
+    }
+
+    setIsOffline(!window.navigator.onLine)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [t])
 
   const setProcessing = (id: number, isProcessing: boolean): void => {
     setProcessingIds((prev) => {
@@ -667,7 +841,20 @@ function App() {
     }
   }
 
+  const blockOfflineMutation = (): boolean => {
+    if (!isOffline) {
+      return false
+    }
+
+    setToast(t('toast.offlineAction'))
+    return true
+  }
+
   const handleCreate = async (todoDraft: TodoDraft): Promise<boolean> => {
+    if (blockOfflineMutation()) {
+      return false
+    }
+
     setIsSubmitting(true)
     setError('')
 
@@ -713,6 +900,10 @@ function App() {
 
   const handleUpdate = async (todoDraft: TodoDraft): Promise<boolean> => {
     if (editingTodoId === null) {
+      return false
+    }
+
+    if (blockOfflineMutation()) {
       return false
     }
 
@@ -799,6 +990,10 @@ function App() {
       return
     }
 
+    if (blockOfflineMutation()) {
+      return
+    }
+
     const payload = createUpdatePayload(todo, { isCompleted: !todo.isCompleted })
 
     setProcessing(todo.id, true)
@@ -843,6 +1038,10 @@ function App() {
     dependsOnId: number,
   ): Promise<void> => {
     if (!dependsOnId) {
+      return
+    }
+
+    if (blockOfflineMutation()) {
       return
     }
 
@@ -895,6 +1094,10 @@ function App() {
     todo: Todo,
     dependsOnId: number,
   ): Promise<void> => {
+    if (blockOfflineMutation()) {
+      return
+    }
+
     setProcessing(todo.id, true)
     setError('')
 
@@ -941,6 +1144,10 @@ function App() {
       return
     }
 
+    if (blockOfflineMutation()) {
+      return
+    }
+
     setProcessing(todo.id, true)
     setError('')
 
@@ -966,6 +1173,10 @@ function App() {
     todo: Todo,
     relatedTodoId: number,
   ): Promise<void> => {
+    if (blockOfflineMutation()) {
+      return
+    }
+
     setProcessing(todo.id, true)
     setError('')
 
@@ -994,6 +1205,10 @@ function App() {
     const normalizedParentId = nextParentId ?? null
     const currentParentId = todo.parentId ?? null
     if (currentParentId === normalizedParentId) {
+      return
+    }
+
+    if (blockOfflineMutation()) {
       return
     }
 
@@ -1096,6 +1311,10 @@ function App() {
     const draggedTodo = todos.find((todo) => todo.id === draggingTodoId)
     clearDragState()
     if (!draggedTodo || processingIds.includes(draggedTodo.id)) {
+      return
+    }
+
+    if (blockOfflineMutation()) {
       return
     }
 
@@ -1370,6 +1589,10 @@ function App() {
   }
 
   const handleDelete = async (todo: Todo): Promise<void> => {
+    if (blockOfflineMutation()) {
+      return
+    }
+
     setProcessing(todo.id, true)
     setError('')
 
@@ -1470,6 +1693,27 @@ function App() {
                   />
                   <span>{t('settings.showCompletedOnStartup')}</span>
                 </label>
+                {isPushSupported ? (
+                  <>
+                    <p className="todo-field-label">{t('settings.pushNotifications')}</p>
+                    <label className="settings-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={pushEnabled}
+                        onChange={(event) => {
+                          void handlePushToggle(event.target.checked)
+                        }}
+                        disabled={isSettingsSaving || isPushUpdating || pushPermission === 'denied'}
+                      />
+                      <span>{t('settings.pushEnabled')}</span>
+                    </label>
+                    {pushPermission === 'denied' ? (
+                      <p className="form-error" role="alert">
+                        {t('settings.pushDenied')}
+                      </p>
+                    ) : null}
+                  </>
+                ) : null}
                 {settingsError ? (
                   <p className="form-error" role="alert">
                     {settingsError}

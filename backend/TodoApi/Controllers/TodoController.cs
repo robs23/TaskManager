@@ -47,6 +47,7 @@ public class TodoController : ControllerBase
             .Include(t => t.RelatedByTodos)
             .Include(t => t.Tags)
             .Include(t => t.Attachments)
+            .Include(t => t.Reminders)
             .OrderBy(t => t.SortOrder)
             .ThenBy(t => t.Id)
             .ToListAsync();
@@ -94,6 +95,7 @@ public class TodoController : ControllerBase
             .Include(t => t.RelatedByTodos)
             .Include(t => t.Tags)
             .Include(t => t.Attachments)
+            .Include(t => t.Reminders)
             .FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
         if (todo is null)
         {
@@ -119,6 +121,7 @@ public class TodoController : ControllerBase
         public List<TodoRelatedResponse> RelatedTodos { get; set; } = new();
         public List<string> Tags { get; set; } = new();
         public List<AttachmentResponse> Attachments { get; set; } = new();
+        public List<ReminderResponse> Reminders { get; set; } = new();
     }
 
     public sealed class TodoDependencyResponse
@@ -152,6 +155,15 @@ public class TodoController : ControllerBase
         public long FileSize { get; set; }
         public DateTime UploadedAt { get; set; }
         public string ContentType { get; set; } = string.Empty;
+    }
+
+    public sealed class ReminderResponse
+    {
+        public int Id { get; set; }
+        public ReminderType Type { get; set; }
+        public int? OffsetMinutes { get; set; }
+        public DateTime? ReminderDateTimeUtc { get; set; }
+        public bool IsSent { get; set; }
     }
 
     public sealed record TodoSearchResult(int Id, string Name);
@@ -202,6 +214,11 @@ public class TodoController : ControllerBase
 
         _context.Todos.Add(todo);
         await _context.SaveChangesAsync();
+        if (todo.Deadline.HasValue)
+        {
+            await ApplyDefaultReminders(todo.Id, userId, todo.Deadline.Value);
+            await _context.SaveChangesAsync();
+        }
 
         return CreatedAtAction(nameof(GetTodo), new { id = todo.Id }, ToResponse(todo));
     }
@@ -220,6 +237,8 @@ public class TodoController : ControllerBase
     {
         public string Name { get; set; } = string.Empty;
     }
+
+    public sealed record CreateReminderRequest(ReminderType Type, int? OffsetMinutes, DateTime? ReminderDateTimeUtc);
 
     public sealed record TodoReorderItem(int Id, int SortOrder);
 
@@ -391,6 +410,8 @@ public class TodoController : ControllerBase
             }
         }
 
+        var oldDeadline = todo.Deadline;
+
         todo.Name = request.Name.Trim();
         todo.Description = NormalizeNullableText(request.Description);
         todo.Deadline = request.Deadline;
@@ -398,8 +419,165 @@ public class TodoController : ControllerBase
         todo.ParentId = request.ParentId;
         todo.IsCompleted = request.IsCompleted;
 
+        if (oldDeadline != todo.Deadline)
+        {
+            var reminders = await _context.Reminders
+                .Where(r => r.TodoId == todo.Id && r.UserId == userId && r.Type == ReminderType.BeforeDeadline)
+                .ToListAsync();
+
+            if (todo.Deadline is null)
+            {
+                _context.Reminders.RemoveRange(reminders);
+            }
+            else
+            {
+                foreach (var reminder in reminders)
+                {
+                    reminder.ReminderDateTimeUtc = todo.Deadline.Value.AddMinutes(-(reminder.OffsetMinutes ?? 0));
+                    if (reminder.ReminderDateTimeUtc > DateTime.UtcNow)
+                    {
+                        reminder.IsSent = false;
+                    }
+                }
+            }
+
+            if (todo.Deadline.HasValue)
+            {
+                await ApplyDefaultReminders(todo.Id, userId, todo.Deadline.Value);
+            }
+        }
+
         await _context.SaveChangesAsync();
         return Ok(ToResponse(todo));
+    }
+
+    [HttpGet("{todoId:int}/reminders")]
+    public async Task<ActionResult<IEnumerable<ReminderResponse>>> GetReminders(int todoId)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var todoExists = await _context.Todos
+            .AnyAsync(t => t.Id == todoId && t.UserId == userId);
+        if (!todoExists)
+        {
+            return NotFound();
+        }
+
+        var reminders = await _context.Reminders.AsNoTracking()
+            .Where(r => r.TodoId == todoId && r.UserId == userId)
+            .OrderBy(r => r.ReminderDateTimeUtc)
+            .ThenBy(r => r.Id)
+            .Select(r => new ReminderResponse
+            {
+                Id = r.Id,
+                Type = r.Type,
+                OffsetMinutes = r.OffsetMinutes,
+                ReminderDateTimeUtc = r.ReminderDateTimeUtc,
+                IsSent = r.IsSent
+            })
+            .ToListAsync();
+
+        return Ok(reminders);
+    }
+
+    [HttpPost("{todoId:int}/reminders")]
+    public async Task<ActionResult<ReminderResponse>> CreateReminder(int todoId, [FromBody] CreateReminderRequest request)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var todo = await _context.Todos
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == todoId && t.UserId == userId);
+        if (todo is null)
+        {
+            return NotFound();
+        }
+
+        DateTime reminderDateTimeUtc;
+        int? offsetMinutes = null;
+        switch (request.Type)
+        {
+            case ReminderType.BeforeDeadline:
+                if (!todo.Deadline.HasValue)
+                {
+                    return BadRequest("Todo deadline is required for before-deadline reminders.");
+                }
+
+                if (!request.OffsetMinutes.HasValue || request.OffsetMinutes.Value <= 0)
+                {
+                    return BadRequest("OffsetMinutes must be a positive value.");
+                }
+
+                offsetMinutes = request.OffsetMinutes.Value;
+                reminderDateTimeUtc = todo.Deadline.Value.AddMinutes(-offsetMinutes.Value);
+                break;
+            case ReminderType.FixedTime:
+                if (!request.ReminderDateTimeUtc.HasValue)
+                {
+                    return BadRequest("ReminderDateTimeUtc is required for fixed-time reminders.");
+                }
+
+                if (request.ReminderDateTimeUtc.Value <= DateTime.UtcNow)
+                {
+                    return BadRequest("ReminderDateTimeUtc must be in the future.");
+                }
+
+                reminderDateTimeUtc = request.ReminderDateTimeUtc.Value;
+                break;
+            default:
+                return BadRequest("Invalid reminder type.");
+        }
+
+        var reminder = new Reminder
+        {
+            TodoId = todoId,
+            UserId = userId,
+            Type = request.Type,
+            OffsetMinutes = offsetMinutes,
+            ReminderDateTimeUtc = reminderDateTimeUtc,
+            IsSent = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Reminders.Add(reminder);
+        await _context.SaveChangesAsync();
+
+        var response = new ReminderResponse
+        {
+            Id = reminder.Id,
+            Type = reminder.Type,
+            OffsetMinutes = reminder.OffsetMinutes,
+            ReminderDateTimeUtc = reminder.ReminderDateTimeUtc,
+            IsSent = reminder.IsSent
+        };
+
+        return CreatedAtAction(nameof(GetReminders), new { todoId }, response);
+    }
+
+    [HttpDelete("{todoId:int}/reminders/{reminderId:int}")]
+    public async Task<IActionResult> DeleteReminder(int todoId, int reminderId)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var reminder = await _context.Reminders
+            .FirstOrDefaultAsync(r => r.Id == reminderId && r.TodoId == todoId && r.UserId == userId);
+        if (reminder is null)
+        {
+            return NotFound();
+        }
+
+        _context.Reminders.Remove(reminder);
+        await _context.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpPut("reorder")]
@@ -731,6 +909,17 @@ public class TodoController : ControllerBase
                     ContentType = attachment.ContentType
                 })
                 .OrderBy(attachment => attachment.UploadedAt)
+                .ToList(),
+            Reminders = todo.Reminders
+                .Select(reminder => new ReminderResponse
+                {
+                    Id = reminder.Id,
+                    Type = reminder.Type,
+                    OffsetMinutes = reminder.OffsetMinutes,
+                    ReminderDateTimeUtc = reminder.ReminderDateTimeUtc,
+                    IsSent = reminder.IsSent
+                })
+                .OrderBy(reminder => reminder.ReminderDateTimeUtc)
                 .ToList()
         };
     }
@@ -762,6 +951,45 @@ public class TodoController : ControllerBase
     {
         var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return int.TryParse(userIdClaim, out userId);
+    }
+
+    private async Task ApplyDefaultReminders(int todoId, int userId, DateTime deadline)
+    {
+        var settings = await _context.UserSettings.AsNoTracking()
+            .SingleOrDefaultAsync(s => s.UserId == userId);
+        if (settings is null || settings.DefaultReminderOffsets.Count == 0)
+        {
+            return;
+        }
+
+        var existingOffsets = await _context.Reminders.AsNoTracking()
+            .Where(r =>
+                r.TodoId == todoId &&
+                r.UserId == userId &&
+                r.Type == ReminderType.BeforeDeadline &&
+                r.OffsetMinutes.HasValue)
+            .Select(r => r.OffsetMinutes!.Value)
+            .ToListAsync();
+
+        var existingOffsetSet = existingOffsets.ToHashSet();
+        foreach (var offset in settings.DefaultReminderOffsets)
+        {
+            if (!existingOffsetSet.Add(offset))
+            {
+                continue;
+            }
+
+            _context.Reminders.Add(new Reminder
+            {
+                TodoId = todoId,
+                UserId = userId,
+                Type = ReminderType.BeforeDeadline,
+                OffsetMinutes = offset,
+                ReminderDateTimeUtc = deadline.AddMinutes(-offset),
+                IsSent = false,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
     }
 
     private async Task<bool> CreatesCircularParentRelationshipAsync(int todoId, int proposedParentId, int userId)

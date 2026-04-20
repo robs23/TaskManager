@@ -159,7 +159,10 @@
     "editTodo": "Edit Todo"
   },
   "toast": {
-    "blockedByDependencies": "Cannot complete: finish all dependencies first"
+    "blockedByDependencies": "Cannot complete: finish all dependencies first",
+    "offline": "You are offline. Changes cannot be saved.",
+    "online": "Connection restored.",
+    "offlineAction": "Cannot perform this action while offline."
   },
   "settings": {
     "title": "Settings",
@@ -167,6 +170,9 @@
     "open": "Settings",
     "viewTodos": "Todos",
     "language": "Language",
+    "pushNotifications": "Push Notifications",
+    "pushEnabled": "Enable push notifications",
+    "pushDenied": "Notifications are blocked in your browser settings",
     "showCompletedOnStartup": "Load completed tasks at startup",
     "loading": "Loading settings...",
     "save": "Save settings",
