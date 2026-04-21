@@ -182,7 +182,7 @@
   gap: 0.65rem;
   background: #1e3a5f;
   color: #f8fafc;
-  overflow: hidden;
+  overflow: visible;
   z-index: 1000;
 }
 
@@ -292,6 +292,140 @@
 .header-action-button.is-active {
   background: #2563eb;
   color: #ffffff;
+}
+
+.header-icon-button {
+  width: 24px;
+  min-width: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notification-bell {
+  position: relative;
+  display: inline-flex;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 1px solid #1e3a5f;
+}
+
+.notification-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(320px, calc(100vw - 1rem));
+  max-height: 360px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.24);
+  z-index: 1010;
+}
+
+.notification-dropdown-title {
+  margin: 0;
+  padding: 0.65rem 0.75rem 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+
+.notification-empty {
+  margin: 0;
+  padding: 0.55rem 0.75rem 0.75rem;
+  font-size: 0.74rem;
+  color: #475569;
+}
+
+.notification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0.35rem;
+}
+
+.notification-item {
+  width: 100%;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: stretch;
+}
+
+.notification-item-content {
+  flex: 1 1 0;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-item:hover .notification-item-content {
+  background: #eff6ff;
+}
+
+.notification-item-delete {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  padding: 0 0.65rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notification-item-delete:hover {
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+.notification-item-todo {
+  color: #0f172a;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.notification-item-time {
+  color: #334155;
+  font-size: 0.72rem;
+}
+
+.notification-status {
+  margin-top: 0.05rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.notification-status.pending {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.notification-status.sent {
+  background: #dcfce7;
+  color: #166534;
 }
 
 .sr-only {
@@ -735,6 +869,13 @@
   line-height: 1;
 }
 
+.todo-reminder-indicator {
+  flex-shrink: 0;
+  font-size: 0.78em;
+  line-height: 1;
+  opacity: 0.85;
+}
+
 .todo-tag-list {
   min-width: 0;
   display: inline-flex;
@@ -854,6 +995,36 @@
   gap: 0.5rem;
   font-size: 0.84rem;
   color: #1f2933;
+}
+
+.reminder-item {
+  justify-content: space-between;
+}
+
+.reminder-type {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.reminder-time {
+  color: #475569;
+}
+
+.reminder-preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.reminder-fixed-time {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.reminder-fixed-time .todo-input {
+  max-width: 230px;
 }
 
 .dependency-item.is-completed {
@@ -1282,6 +1453,40 @@
   font-size: 0.9rem;
 }
 
+.settings-reminder-help {
+  margin: 0.25rem 0 0;
+  color: #52606d;
+  font-size: 0.82rem;
+}
+
+.settings-reminder-chips {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.reminder-chip {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1f2933;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.reminder-chip.is-active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.reminder-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .settings-actions {
   margin-top: 0.25rem;
 }
@@ -1316,6 +1521,11 @@
 
   .app-user-name {
     max-width: 88px;
+  }
+
+  .notification-dropdown {
+    right: -0.35rem;
+    width: min(280px, calc(100vw - 0.9rem));
   }
 
   .floating-create-button {

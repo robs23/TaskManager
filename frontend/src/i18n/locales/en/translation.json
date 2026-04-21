@@ -83,7 +83,8 @@
     "notesOptional": "Notes (optional)",
     "nameRequired": "Please enter a task name.",
     "tabDetails": "Details",
-    "tabLinks": "Links"
+    "tabLinks": "Links",
+    "tabReminders": "Reminders"
   },
   "editor": {
     "bold": "B",
@@ -117,6 +118,7 @@
     "markAsIncomplete": "Mark as incomplete",
     "due": "Due",
     "hasAttachments": "Has attachments",
+    "hasReminders": "Has pending reminders",
     "expandSubtasks": "Expand subtasks",
     "collapseSubtasks": "Collapse subtasks",
     "dragHandle": "Drag todo",
@@ -128,6 +130,13 @@
   "search": {
     "typeToSearch": "Type to search todos",
     "noResults": "No matching todos"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "noReminders": "No recent reminders",
+    "pending": "Pending",
+    "sent": "Sent",
+    "deleteReminder": "Delete reminder"
   },
   "errors": {
     "fetchTodos": "Failed to fetch todos.",
@@ -151,8 +160,25 @@
     "downloadAttachmentMessage": "Unable to download attachment. Please try again.",
     "deleteAttachment": "Failed to delete attachment.",
     "deleteAttachmentMessage": "Unable to delete attachment. Please try again.",
+    "addReminder": "Failed to add reminder.",
+    "addReminderMessage": "Unable to add reminder. Please try again.",
+    "removeReminder": "Failed to remove reminder.",
+    "removeReminderMessage": "Unable to remove reminder. Please try again.",
     "deleteTodo": "Failed to delete todo.",
     "deleteTodoMessage": "Unable to delete todo. Please try again."
+  },
+  "reminder": {
+    "beforeDeadline": "before deadline",
+    "fixedTime": "Fixed time",
+    "15min": "15 min",
+    "30min": "30 min",
+    "1hour": "1 hour",
+    "1day": "1 day",
+    "1week": "1 week",
+    "sent": "Sent",
+    "addFixedTime": "Add fixed reminder",
+    "selectTime": "Select a future date and time.",
+    "beforeDeadlineMinutes": "{{minutes}} min before deadline"
   },
   "modal": {
     "createTodo": "Create Todo",
@@ -174,6 +200,8 @@
     "pushEnabled": "Enable push notifications",
     "pushDenied": "Notifications are blocked in your browser settings",
     "showCompletedOnStartup": "Load completed tasks at startup",
+    "defaultReminders": "Default Reminders",
+    "defaultRemindersHelp": "Automatically added when a deadline is set",
     "loading": "Loading settings...",
     "save": "Save settings",
     "saving": "Saving...",

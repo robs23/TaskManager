@@ -21,6 +21,12 @@ interface AttachmentSummary {
   contentType: string
 }
 
+interface ReminderSummary {
+  id: number
+  isSent: boolean
+  reminderDateTimeUtc: string | null
+}
+
 export interface Todo {
   id: number
   sortOrder: number
@@ -36,6 +42,7 @@ export interface Todo {
   dependencies: TodoDependencySummary[]
   relatedTodos: TodoRelatedSummary[]
   attachments: AttachmentSummary[]
+  reminders: ReminderSummary[]
   children: Todo[]
 }
 
@@ -101,6 +108,7 @@ function TodoItem({
   const isCollapsed = collapsedTodoIds.has(todo.id)
   const isDraggingThisTodo = draggingTodoId === todo.id
   const isDropTarget = activeDropTodoId === todo.id
+  const hasPendingReminder = todo.reminders.some((r) => !r.isSent)
   const draggedTodoDescendants =
     draggingTodoId === null ? new Set<number>() : descendantMap.get(draggingTodoId) ?? new Set<number>()
   const canAcceptDrop =
@@ -251,6 +259,11 @@ function TodoItem({
               {attachments.length > 0 ? (
                 <span className="todo-attachment-indicator" title={t('todoItem.hasAttachments')}>
                   📎
+                </span>
+              ) : null}
+              {hasPendingReminder ? (
+                <span className="todo-reminder-indicator" title={t('todoItem.hasReminders')}>
+                  🔔
                 </span>
               ) : null}
               {visibleTags.length > 0 ? (

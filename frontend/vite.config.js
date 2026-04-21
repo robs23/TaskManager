@@ -8,6 +8,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       manifest: {
         name: 'TaskManager',
         short_name: 'Tasks',
@@ -29,22 +32,8 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url, request }) =>
-              request.method === 'GET' && url.pathname.startsWith('/api/'),
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: {
-                maxAgeSeconds: 24 * 60 * 60,
-              },
-              networkTimeoutSeconds: 3,
-            },
-          },
-        ],
       },
     }),
   ],

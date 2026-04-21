@@ -83,7 +83,8 @@
     "notesOptional": "Notatki (opcjonalnie)",
     "nameRequired": "Podaj nazwę zadania.",
     "tabDetails": "Szczegóły",
-    "tabLinks": "Powiązania"
+    "tabLinks": "Powiązania",
+    "tabReminders": "Przypomnienia"
   },
   "editor": {
     "bold": "B",
@@ -117,7 +118,7 @@
     "markAsIncomplete": "Oznacz jako nieukończone",
     "due": "Termin",
     "hasAttachments": "Ma załączniki",
-    "expandSubtasks": "Rozwiń podzadania",
+    "hasReminders": "Ma oczekujące przypomnienia",
     "collapseSubtasks": "Zwiń podzadania",
     "dragHandle": "Przeciągnij zadanie",
     "noAttachments": "Brak załączników.",
@@ -128,6 +129,13 @@
   "search": {
     "typeToSearch": "Wpisz, aby wyszukać zadania",
     "noResults": "Brak pasujących zadań"
+  },
+  "notifications": {
+    "title": "Powiadomienia",
+    "noReminders": "Brak ostatnich przypomnień",
+    "pending": "Oczekujące",
+    "sent": "Wysłane",
+    "deleteReminder": "Usuń przypomnienie"
   },
   "errors": {
     "fetchTodos": "Nie udało się pobrać zadań.",
@@ -151,8 +159,25 @@
     "downloadAttachmentMessage": "Nie można pobrać załącznika. Spróbuj ponownie.",
     "deleteAttachment": "Nie udało się usunąć załącznika.",
     "deleteAttachmentMessage": "Nie można usunąć załącznika. Spróbuj ponownie.",
+    "addReminder": "Nie udało się dodać przypomnienia.",
+    "addReminderMessage": "Nie można dodać przypomnienia. Spróbuj ponownie.",
+    "removeReminder": "Nie udało się usunąć przypomnienia.",
+    "removeReminderMessage": "Nie można usunąć przypomnienia. Spróbuj ponownie.",
     "deleteTodo": "Nie udało się usunąć zadania.",
     "deleteTodoMessage": "Nie można usunąć zadania. Spróbuj ponownie."
+  },
+  "reminder": {
+    "beforeDeadline": "przed terminem",
+    "fixedTime": "Dokładna data",
+    "15min": "15 min",
+    "30min": "30 min",
+    "1hour": "1 godz.",
+    "1day": "1 dzień",
+    "1week": "1 tydzień",
+    "sent": "Wysłane",
+    "addFixedTime": "Dodaj przypomnienie",
+    "selectTime": "Wybierz przyszłą datę i godzinę.",
+    "beforeDeadlineMinutes": "{{minutes}} min przed terminem"
   },
   "modal": {
     "createTodo": "Utwórz zadanie",
@@ -174,6 +199,8 @@
     "pushEnabled": "Włącz powiadomienia push",
     "pushDenied": "Powiadomienia są zablokowane w ustawieniach przeglądarki",
     "showCompletedOnStartup": "Ładuj ukończone zadania przy starcie",
+    "defaultReminders": "Domyślne przypomnienia",
+    "defaultRemindersHelp": "Automatycznie dodawane po ustawieniu terminu",
     "loading": "Ładowanie ustawień...",
     "save": "Zapisz ustawienia",
     "saving": "Zapisywanie...",

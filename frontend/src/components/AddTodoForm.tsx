@@ -28,6 +28,20 @@ export interface TodoRelatedSummary {
   isCompleted: boolean
 }
 
+export interface ReminderSummary {
+  id: number
+  type: number
+  offsetMinutes: number | null
+  reminderDateTimeUtc: string | null
+  isSent: boolean
+}
+
+export interface CreateReminderPayload {
+  type: 'beforeDeadline' | 'fixedTime'
+  offsetMinutes?: number
+  reminderDateTimeUtc?: string
+}
+
 export interface AddTodoFormProps {
   onSubmit: (todoDraft: TodoDraft) => Promise<boolean>
   isSubmitting: boolean
@@ -48,6 +62,9 @@ export interface AddTodoFormProps {
   onRemoveDependency?: (dependsOnId: number) => void
   onAddRelated?: (relatedId: number) => void
   onRemoveRelated?: (relatedId: number) => void
+  reminders?: ReminderSummary[]
+  onAddReminder?: (payload: CreateReminderPayload) => Promise<boolean>
+  onRemoveReminder?: (reminderId: number) => Promise<boolean>
 }
 
 export interface AttachmentSummary {
@@ -97,9 +114,12 @@ function AddTodoForm({
   onRemoveDependency,
   onAddRelated,
   onRemoveRelated,
+  reminders = [],
+  onAddReminder,
+  onRemoveReminder,
 }: AddTodoFormProps) {
   const { t } = useTranslation()
-  const [activeTab, setActiveTab] = useState<'details' | 'links'>('details')
+  const [activeTab, setActiveTab] = useState<'details' | 'links' | 'reminders'>('details')
   const [name, setName] = useState<string>(initialDraft?.name ?? '')
   const [description, setDescription] = useState<string>(initialDraft?.description ?? '')
   const [deadline, setDeadline] = useState<string>(initialDraft?.deadline ?? '')
@@ -113,6 +133,16 @@ function AddTodoForm({
   const [formError, setFormError] = useState<string>('')
   const [fileError, setFileError] = useState<string>('')
   const [attachmentActionError, setAttachmentActionError] = useState<string>('')
+  const [fixedReminderDateTime, setFixedReminderDateTime] = useState<string>('')
+  const [reminderError, setReminderError] = useState<string>('')
+  const [isReminderUpdating, setIsReminderUpdating] = useState<boolean>(false)
+  const reminderOffsetPresets = [
+    { minutes: 15, label: t('reminder.15min') },
+    { minutes: 30, label: t('reminder.30min') },
+    { minutes: 60, label: t('reminder.1hour') },
+    { minutes: 1440, label: t('reminder.1day') },
+    { minutes: 10080, label: t('reminder.1week') },
+  ]
 
   useEffect(() => {
     setName(initialDraft?.name ?? '')
@@ -125,6 +155,9 @@ function AddTodoForm({
     setFormError('')
     setFileError('')
     setAttachmentActionError('')
+    setFixedReminderDateTime('')
+    setReminderError('')
+    setIsReminderUpdating(false)
     setActiveTab('details')
   }, [initialDraft, isEditMode, parentName])
 
@@ -254,6 +287,105 @@ function AddTodoForm({
     }
   }
 
+  const formatReminderDateTime = (value: string | null): string => {
+    if (!value) {
+      return t('common.none')
+    }
+
+    const parsedDate = new Date(value)
+    if (Number.isNaN(parsedDate.getTime())) {
+      return t('common.none')
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(parsedDate)
+  }
+
+  const formatBeforeDeadlineLabel = (offsetMinutes: number | null): string => {
+    if (offsetMinutes === null) {
+      return t('reminder.beforeDeadline')
+    }
+
+    const preset = reminderOffsetPresets.find((item) => item.minutes === offsetMinutes)
+    if (preset) {
+      return `${preset.label} ${t('reminder.beforeDeadline')}`
+    }
+
+    return t('reminder.beforeDeadlineMinutes', { minutes: offsetMinutes })
+  }
+
+  const handleAddBeforeDeadlineReminder = async (offsetMinutes: number): Promise<void> => {
+    if (!onAddReminder) {
+      return
+    }
+
+    setReminderError('')
+    setIsReminderUpdating(true)
+    try {
+      const wasAdded = await onAddReminder({
+        type: 'beforeDeadline',
+        offsetMinutes,
+      })
+      if (!wasAdded) {
+        setReminderError(t('errors.addReminderMessage'))
+      }
+    } finally {
+      setIsReminderUpdating(false)
+    }
+  }
+
+  const handleAddFixedReminder = async (): Promise<void> => {
+    if (!onAddReminder) {
+      return
+    }
+
+    if (!fixedReminderDateTime) {
+      setReminderError(t('reminder.selectTime'))
+      return
+    }
+
+    const parsedDate = new Date(fixedReminderDateTime)
+    if (Number.isNaN(parsedDate.getTime()) || parsedDate <= new Date()) {
+      setReminderError(t('reminder.selectTime'))
+      return
+    }
+
+    setReminderError('')
+    setIsReminderUpdating(true)
+    try {
+      const wasAdded = await onAddReminder({
+        type: 'fixedTime',
+        reminderDateTimeUtc: parsedDate.toISOString(),
+      })
+      if (!wasAdded) {
+        setReminderError(t('errors.addReminderMessage'))
+        return
+      }
+      setFixedReminderDateTime('')
+    } finally {
+      setIsReminderUpdating(false)
+    }
+  }
+
+  const handleRemoveReminder = async (reminderId: number): Promise<void> => {
+    if (!onRemoveReminder) {
+      return
+    }
+
+    setReminderError('')
+    setIsReminderUpdating(true)
+    try {
+      const wasRemoved = await onRemoveReminder(reminderId)
+      if (!wasRemoved) {
+        setReminderError(t('errors.removeReminderMessage'))
+      }
+    } finally {
+      setIsReminderUpdating(false)
+    }
+  }
+
   return (
     <form className="todo-form" onSubmit={handleSubmit}>
       <label className="todo-label" htmlFor="todo-name">
@@ -274,6 +406,13 @@ function AddTodoForm({
             onClick={() => setActiveTab('links')}
           >
             {t('form.tabLinks')}
+          </button>
+          <button
+            className={`form-tab-button${activeTab === 'reminders' ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => setActiveTab('reminders')}
+          >
+            {t('form.tabReminders')}
           </button>
         </div>
       ) : null}
@@ -515,6 +654,81 @@ function AddTodoForm({
               placeholder={t('common.relatedTodos')}
             />
           </div>
+        </div>
+      ) : null}
+      {(isEditMode && activeTab === 'reminders') ? (
+        <div className="todo-controls todo-controls--stacked">
+          <div className="todo-field">
+            <p className="todo-field-label">{t('form.tabReminders')}</p>
+            {reminders.length === 0 ? (
+              <p className="todo-field-hint">{t('common.none')}</p>
+            ) : (
+              <ul className="dependency-list">
+                {reminders.map((reminder) => (
+                  <li key={reminder.id} className="dependency-item reminder-item">
+                    <span className="reminder-type">
+                      {reminder.type === 0
+                        ? formatBeforeDeadlineLabel(reminder.offsetMinutes)
+                        : t('reminder.fixedTime')}
+                    </span>
+                    <span className="reminder-time">
+                      {reminder.type === 0
+                        ? formatReminderDateTime(reminder.reminderDateTimeUtc)
+                        : formatReminderDateTime(reminder.reminderDateTimeUtc)}
+                    </span>
+                    {reminder.isSent ? <span className="dependency-status is-completed">{t('reminder.sent')}</span> : null}
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void handleRemoveReminder(reminder.id)}
+                      disabled={isSubmitting || isReminderUpdating || !onRemoveReminder}
+                    >
+                      {t('buttons.remove')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {deadline ? (
+            <div className="todo-field">
+              <p className="todo-field-label">{t('reminder.beforeDeadline')}</p>
+              <div className="reminder-preset-list">
+                {reminderOffsetPresets.map((preset) => (
+                  <button
+                    key={preset.minutes}
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void handleAddBeforeDeadlineReminder(preset.minutes)}
+                    disabled={isSubmitting || isReminderUpdating || !onAddReminder}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className="todo-field">
+            <p className="todo-field-label">{t('reminder.fixedTime')}</p>
+            <div className="reminder-fixed-time">
+              <input
+                className="todo-input"
+                type="datetime-local"
+                value={fixedReminderDateTime}
+                onChange={(event) => setFixedReminderDateTime(event.target.value)}
+                disabled={isSubmitting || isReminderUpdating}
+              />
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => void handleAddFixedReminder()}
+                disabled={isSubmitting || isReminderUpdating || !onAddReminder}
+              >
+                {t('reminder.addFixedTime')}
+              </button>
+            </div>
+          </div>
+          {reminderError ? <p className="form-error">{reminderError}</p> : null}
         </div>
       ) : null}
       <div className="todo-controls">

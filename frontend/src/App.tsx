@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import './App.css'
 import AddTodoForm from './components/AddTodoForm'
-import type { TodoDraft } from './components/AddTodoForm'
+import type { CreateReminderPayload, TodoDraft } from './components/AddTodoForm'
 import AuthForm from './components/AuthForm'
-import Header from './components/Header'
+import Header, { type HeaderReminderItem } from './components/Header'
 import Modal from './components/Modal'
 import { FilterPanel, type FilterState } from './components/FilterPanel'
 import Toast from './components/Toast'
@@ -14,6 +14,8 @@ import { fetchWithAuth } from './api/fetchWithAuth'
 
 const API_BASE = '/api/todos'
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+const ONE_DAY_MS = 24 * 60 * 60 * 1000
+const SEVEN_DAYS_MS = 7 * ONE_DAY_MS
 
 interface TodoDependencySummary {
   id: number
@@ -35,6 +37,14 @@ interface AttachmentSummary {
   contentType: string
 }
 
+interface ReminderSummary {
+  id: number
+  type: number
+  offsetMinutes: number | null
+  reminderDateTimeUtc: string | null
+  isSent: boolean
+}
+
 interface UploadedAttachmentResponse extends AttachmentSummary {
   todoId: number
 }
@@ -54,6 +64,7 @@ interface TodoApiResponse {
   dependencies?: TodoDependencySummary[]
   relatedTodos?: TodoRelatedSummary[]
   attachments?: AttachmentSummary[]
+  reminders?: ReminderSummary[]
 }
 
 interface Todo extends Omit<TodoApiResponse, 'dependencies' | 'relatedTodos'> {
@@ -63,6 +74,7 @@ interface Todo extends Omit<TodoApiResponse, 'dependencies' | 'relatedTodos'> {
   relatedTodos: TodoRelatedSummary[]
   tags: string[]
   attachments: AttachmentSummary[]
+  reminders: ReminderSummary[]
   children: Todo[]
 }
 
@@ -93,11 +105,24 @@ interface ActiveDropZone {
 interface UserSettings {
   preferredLanguage: 'en' | 'pl'
   showCompletedOnStartup: boolean
+  defaultReminderOffsets: number[]
 }
 
 interface UserSettingsResponse {
   preferredLanguage?: string
   showCompletedOnStartup?: boolean
+  defaultReminderOffsets?: number[]
+}
+
+interface PushNotificationPayload {
+  title: string
+  body: string
+  todoId: number | null
+}
+
+interface PushNotificationClientMessage {
+  type: 'push-notification'
+  payload: PushNotificationPayload
 }
 
 type AppView = 'todos' | 'settings'
@@ -115,15 +140,62 @@ const normalizeLanguage = (language: string | undefined): 'en' | 'pl' => {
   return 'en'
 }
 
+const normalizeReminderOffsets = (offsets: number[] | undefined): number[] => {
+  if (!Array.isArray(offsets)) {
+    return []
+  }
+
+  const uniqueOffsets = new Set<number>()
+  offsets.forEach((offset) => {
+    if (Number.isFinite(offset) && offset > 0) {
+      uniqueOffsets.add(Math.trunc(offset))
+    }
+  })
+
+  return [...uniqueOffsets].sort((left, right) => left - right)
+}
+
+const isPushNotificationClientMessage = (value: unknown): value is PushNotificationClientMessage => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Record<string, unknown>
+  if (candidate.type !== 'push-notification') {
+    return false
+  }
+
+  if (!candidate.payload || typeof candidate.payload !== 'object') {
+    return false
+  }
+
+  const payload = candidate.payload as Record<string, unknown>
+  const hasValidTodoId =
+    payload.todoId === null ||
+    (typeof payload.todoId === 'number' && Number.isFinite(payload.todoId))
+
+  return typeof payload.title === 'string' && typeof payload.body === 'string' && hasValidTodoId
+}
+
 const normalizeSettings = (settings: UserSettingsResponse | null | undefined): UserSettings => ({
   preferredLanguage: normalizeLanguage(settings?.preferredLanguage),
   showCompletedOnStartup: Boolean(settings?.showCompletedOnStartup),
+  defaultReminderOffsets: normalizeReminderOffsets(settings?.defaultReminderOffsets),
 })
 
 const DEFAULT_USER_SETTINGS: UserSettings = {
   preferredLanguage: 'en',
   showCompletedOnStartup: false,
+  defaultReminderOffsets: [],
 }
+
+const DEFAULT_REMINDER_OFFSET_PRESETS = [
+  { minutes: 15, labelKey: 'reminder.15min' },
+  { minutes: 30, labelKey: 'reminder.30min' },
+  { minutes: 60, labelKey: 'reminder.1hour' },
+  { minutes: 1440, labelKey: 'reminder.1day' },
+  { minutes: 10080, labelKey: 'reminder.1week' },
+] as const
 
 const normalizeTag = (value: string): string => value.trim().toLowerCase()
 
@@ -204,6 +276,16 @@ const hydrateTodo = (todo: TodoApiResponse): Todo => {
         isCompleted: Boolean(relatedTodo.isCompleted),
       }))
     : []
+  const reminders = Array.isArray(todo.reminders)
+    ? todo.reminders.map((reminder) => ({
+        id: reminder.id,
+        type: Number(reminder.type),
+        offsetMinutes:
+          typeof reminder.offsetMinutes === 'number' ? Number(reminder.offsetMinutes) : null,
+        reminderDateTimeUtc: reminder.reminderDateTimeUtc,
+        isSent: Boolean(reminder.isSent),
+      }))
+    : []
 
   return {
     ...todo,
@@ -212,6 +294,7 @@ const hydrateTodo = (todo: TodoApiResponse): Todo => {
     relatedTodos,
     tags,
     attachments,
+    reminders,
     doable: deriveDoable(dependencies),
     children: [],
   }
@@ -459,6 +542,45 @@ function App() {
     () => todos.find((todo) => todo.id === selectedParentId)?.name ?? '',
     [selectedParentId, todos],
   )
+  const headerReminders = useMemo<HeaderReminderItem[]>(() => {
+    const threshold = Date.now() - SEVEN_DAYS_MS
+
+    return todos
+      .flatMap((todo) =>
+        todo.reminders.flatMap((reminder) => {
+          if (reminder.reminderDateTimeUtc === null) {
+            return []
+          }
+
+          return {
+            reminderId: reminder.id,
+            todoId: todo.id,
+            todoName: todo.name,
+            reminderDateTimeUtc: reminder.reminderDateTimeUtc,
+            isSent: reminder.isSent,
+          }
+        }),
+      )
+      .filter((reminder) => Date.parse(reminder.reminderDateTimeUtc) >= threshold)
+      .sort((left, right) => Date.parse(right.reminderDateTimeUtc) - Date.parse(left.reminderDateTimeUtc))
+  }, [todos])
+  const hasReminderBadge = useMemo(() => {
+    const recentSentThreshold = Date.now() - ONE_DAY_MS
+
+    return todos.some((todo) =>
+      todo.reminders.some((reminder) => {
+        if (!reminder.isSent) {
+          return true
+        }
+
+        if (reminder.reminderDateTimeUtc === null) {
+          return false
+        }
+
+        return Date.parse(reminder.reminderDateTimeUtc) >= recentSentThreshold
+      }),
+    )
+  }, [todos])
   const visibleRoots = useMemo(() => filterTodoHierarchy(roots, filters), [roots, filters])
 
   useEffect(() => {
@@ -686,6 +808,7 @@ function App() {
     const payload: UserSettings = {
       preferredLanguage: normalizeLanguage(settingsDraft.preferredLanguage),
       showCompletedOnStartup: settingsDraft.showCompletedOnStartup,
+      defaultReminderOffsets: normalizeReminderOffsets(settingsDraft.defaultReminderOffsets),
     }
 
     try {
@@ -711,6 +834,20 @@ function App() {
     } finally {
       setIsSettingsSaving(false)
     }
+  }
+
+  const handleDefaultReminderOffsetToggle = (minutes: number): void => {
+    setSettingsDraft((previous) => {
+      const isActive = previous.defaultReminderOffsets.includes(minutes)
+      const nextOffsets = isActive
+        ? previous.defaultReminderOffsets.filter((offset) => offset !== minutes)
+        : [...previous.defaultReminderOffsets, minutes].sort((left, right) => left - right)
+
+      return {
+        ...previous,
+        defaultReminderOffsets: nextOffsets,
+      }
+    })
   }
 
   useEffect(() => {
@@ -754,6 +891,30 @@ function App() {
       window.removeEventListener('offline', handleOffline)
     }
   }, [t])
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) {
+      return
+    }
+
+    const handleServiceWorkerMessage = (event: MessageEvent<unknown>): void => {
+      if (!isPushNotificationClientMessage(event.data)) {
+        return
+      }
+
+      const { title, body } = event.data.payload
+      const message = [title.trim(), body.trim()].filter((part) => part.length > 0).join(': ')
+      if (message.length > 0) {
+        setToast(message)
+      }
+    }
+
+    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage)
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
+    }
+  }, [])
 
   const setProcessing = (id: number, isProcessing: boolean): void => {
     setProcessingIds((prev) => {
@@ -1198,6 +1359,85 @@ function App() {
     }
   }
 
+  const handleAddReminder = async (
+    todo: Todo,
+    payload: CreateReminderPayload,
+  ): Promise<boolean> => {
+    if (blockOfflineMutation()) {
+      return false
+    }
+
+    setProcessing(todo.id, true)
+    setError('')
+
+    try {
+      const requestBody =
+        payload.type === 'beforeDeadline'
+          ? {
+              type: 0,
+              offsetMinutes: payload.offsetMinutes ?? null,
+              reminderDateTimeUtc: null,
+            }
+          : {
+              type: 1,
+              offsetMinutes: null,
+              reminderDateTimeUtc: payload.reminderDateTimeUtc ?? null,
+            }
+
+      const response = await fetchWithAuth(`${API_BASE}/${todo.id}/reminders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      })
+
+      if (!response.ok) {
+        throw new Error(t('errors.addReminder'))
+      }
+
+      await loadTodos()
+      return true
+    } catch (reminderError) {
+      console.error(reminderError)
+      setError(t('errors.addReminderMessage'))
+      return false
+    } finally {
+      setProcessing(todo.id, false)
+    }
+  }
+
+  const handleRemoveReminder = async (
+    todo: Todo,
+    reminderId: number,
+  ): Promise<boolean> => {
+    if (blockOfflineMutation()) {
+      return false
+    }
+
+    setProcessing(todo.id, true)
+    setError('')
+
+    try {
+      const response = await fetchWithAuth(`${API_BASE}/${todo.id}/reminders/${reminderId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error(t('errors.removeReminder'))
+      }
+
+      await loadTodos()
+      return true
+    } catch (reminderError) {
+      console.error(reminderError)
+      setError(t('errors.removeReminderMessage'))
+      return false
+    } finally {
+      setProcessing(todo.id, false)
+    }
+  }
+
   const handleReparent = async (
     todo: Todo,
     nextParentId: number | null,
@@ -1418,6 +1658,18 @@ function App() {
     setShowCreateForm(true)
   }
 
+  const handleNotificationReminderClick = useCallback(
+    (reminder: HeaderReminderItem): void => {
+      const todo = todos.find((candidate) => candidate.id === reminder.todoId)
+      if (!todo) {
+        return
+      }
+
+      handleStartEdit(todo)
+    },
+    [todos],
+  )
+
   const handleToggleCreateForm = (): void => {
     setShowCreateForm((previous) => {
       if (previous) {
@@ -1624,6 +1876,15 @@ function App() {
         userName={authUsername}
         isAuthenticated={isAuthenticated}
         onLogout={handleLogout}
+        reminders={headerReminders}
+        hasReminderBadge={hasReminderBadge}
+        onReminderClick={handleNotificationReminderClick}
+        onDeleteReminder={(todoId, reminderId) => {
+          const todo = todos.find((candidate) => candidate.id === todoId)
+          if (todo) {
+            void handleRemoveReminder(todo, reminderId)
+          }
+        }}
       />
       {isAuthenticated ? (
         <Toolbar
@@ -1693,6 +1954,27 @@ function App() {
                   />
                   <span>{t('settings.showCompletedOnStartup')}</span>
                 </label>
+                <div>
+                  <p className="todo-field-label">{t('settings.defaultReminders')}</p>
+                  <p className="settings-reminder-help">{t('settings.defaultRemindersHelp')}</p>
+                  <div className="settings-reminder-chips" role="group" aria-label={t('settings.defaultReminders')}>
+                    {DEFAULT_REMINDER_OFFSET_PRESETS.map((preset) => {
+                      const isActive = settingsDraft.defaultReminderOffsets.includes(preset.minutes)
+                      return (
+                        <button
+                          key={preset.minutes}
+                          type="button"
+                          className={`reminder-chip ${isActive ? 'is-active' : ''}`}
+                          onClick={() => handleDefaultReminderOffsetToggle(preset.minutes)}
+                          disabled={isSettingsSaving}
+                          aria-pressed={isActive}
+                        >
+                          {t(preset.labelKey)}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
                 {isPushSupported ? (
                   <>
                     <p className="todo-field-label">{t('settings.pushNotifications')}</p>
@@ -1754,10 +2036,21 @@ function App() {
               isEditMode={Boolean(editingTodo)}
               dependencies={editingTodo?.dependencies ?? []}
               relatedTodos={editingTodo?.relatedTodos ?? []}
+              reminders={editingTodo?.reminders ?? []}
               onAddDependency={editingTodo ? (id) => void handleAddDependency(editingTodo, id) : undefined}
               onRemoveDependency={editingTodo ? (id) => void handleRemoveDependency(editingTodo, id) : undefined}
               onAddRelated={editingTodo ? (id) => void handleAddRelated(editingTodo, id) : undefined}
               onRemoveRelated={editingTodo ? (id) => void handleRemoveRelated(editingTodo, id) : undefined}
+              onAddReminder={
+                editingTodo
+                  ? (payload) => handleAddReminder(editingTodo, payload)
+                  : undefined
+              }
+              onRemoveReminder={
+                editingTodo
+                  ? (reminderId) => handleRemoveReminder(editingTodo, reminderId)
+                  : undefined
+              }
               initialDraft={
                 editingTodo
                   ? {
