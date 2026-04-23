@@ -21,8 +21,9 @@ public class PushControllerTests
 
         var result = controller.GetVapidPublicKey();
 
-        var ok = Assert.IsType<OkObjectResult>(result.Result);
-        Assert.Equal("PUBLIC_KEY_TEST_VALUE", ok.Value);
+        var content = Assert.IsType<ContentResult>(result);
+        Assert.Equal("PUBLIC_KEY_TEST_VALUE", content.Content);
+        Assert.Equal("text/plain", content.ContentType);
     }
 
     [Fact]

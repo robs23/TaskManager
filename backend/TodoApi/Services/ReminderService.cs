@@ -79,64 +79,81 @@ public sealed class ReminderService : BackgroundService
 
         foreach (var reminder in dueReminders)
         {
-            var subscriptions = await dbContext.PushSubscriptions
-                .Where(s => s.UserId == reminder.UserId)
-                .ToListAsync(cancellationToken);
-
-            var payload = BuildPayload(reminder);
-            var sentToAllSubscriptions = true;
-
-            foreach (var subscription in subscriptions)
+            try
             {
-                try
-                {
-                    var pushSubscription = new WebPush.PushSubscription(
-                        subscription.Endpoint,
-                        subscription.P256dh,
-                        subscription.Auth);
-
-                    await _webPushClient.SendNotificationAsync(
-                        pushSubscription,
-                        payload,
-                        _vapidDetails,
-                        cancellationToken);
-                }
-                catch (WebPushException ex) when (ex.StatusCode == HttpStatusCode.Gone)
-                {
-                    dbContext.PushSubscriptions.Remove(subscription);
-                    _logger.LogInformation(
-                        "Removed expired push subscription for user {UserId} endpoint {Endpoint}.",
-                        reminder.UserId,
-                        subscription.Endpoint);
-                }
-                catch (WebPushException ex)
-                {
-                    sentToAllSubscriptions = false;
-                    _logger.LogWarning(
-                        ex,
-                        "Push notification failed for reminder {ReminderId} and endpoint {Endpoint} with status {StatusCode}.",
-                        reminder.Id,
-                        subscription.Endpoint,
-                        ex.StatusCode);
-                }
-                catch (Exception ex)
-                {
-                    sentToAllSubscriptions = false;
-                    _logger.LogWarning(
-                        ex,
-                        "Unexpected push notification failure for reminder {ReminderId} and endpoint {Endpoint}.",
-                        reminder.Id,
-                        subscription.Endpoint);
-                }
+                await ProcessReminderAsync(dbContext, reminder, cancellationToken);
             }
-
-            if (sentToAllSubscriptions)
+            catch (Exception ex)
             {
-                reminder.IsSent = true;
+                _logger.LogError(
+                    ex,
+                    "Failed processing reminder {ReminderId} for user {UserId}.",
+                    reminder.Id,
+                    reminder.UserId);
             }
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task ProcessReminderAsync(TodoDbContext dbContext, Reminder reminder, CancellationToken cancellationToken)
+    {
+        var subscriptions = await dbContext.PushSubscriptions
+            .Where(s => s.UserId == reminder.UserId)
+            .ToListAsync(cancellationToken);
+
+        var payload = BuildPayload(reminder);
+        var sentToAllSubscriptions = true;
+
+        foreach (var subscription in subscriptions)
+        {
+            try
+            {
+                var pushSubscription = new WebPush.PushSubscription(
+                    subscription.Endpoint,
+                    subscription.P256dh,
+                    subscription.Auth);
+
+                await _webPushClient.SendNotificationAsync(
+                    pushSubscription,
+                    payload,
+                    _vapidDetails,
+                    cancellationToken);
+            }
+            catch (WebPushException ex) when (ex.StatusCode == HttpStatusCode.Gone)
+            {
+                dbContext.PushSubscriptions.Remove(subscription);
+                _logger.LogInformation(
+                    "Removed expired push subscription for user {UserId} endpoint {Endpoint}.",
+                    reminder.UserId,
+                    subscription.Endpoint);
+            }
+            catch (WebPushException ex)
+            {
+                sentToAllSubscriptions = false;
+                _logger.LogError(
+                    ex,
+                    "WebPush send failed for reminder {ReminderId}, user {UserId}, endpoint {Endpoint}, status {StatusCode}.",
+                    reminder.Id,
+                    reminder.UserId,
+                    subscription.Endpoint,
+                    ex.StatusCode);
+            }
+            catch (Exception ex)
+            {
+                sentToAllSubscriptions = false;
+                _logger.LogWarning(
+                    ex,
+                    "Unexpected push notification failure for reminder {ReminderId} and endpoint {Endpoint}.",
+                    reminder.Id,
+                    subscription.Endpoint);
+            }
+        }
+
+        if (sentToAllSubscriptions)
+        {
+            reminder.IsSent = true;
+        }
     }
 
     private static string BuildPayload(Reminder reminder)

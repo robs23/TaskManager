@@ -1524,8 +1524,12 @@
   }
 
   .notification-dropdown {
-    right: -0.35rem;
-    width: min(280px, calc(100vw - 0.9rem));
+    position: fixed;
+    top: 52px;
+    right: 0.45rem;
+    left: 0.45rem;
+    width: auto;
+    max-height: calc(100dvh - 60px);
   }
 
   .floating-create-button {

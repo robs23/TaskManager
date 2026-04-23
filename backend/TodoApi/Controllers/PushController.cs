@@ -34,7 +34,7 @@ public class PushController : ControllerBase
 
     [AllowAnonymous]
     [HttpGet("vapid-public-key")]
-    public ActionResult<string> GetVapidPublicKey()
+    public IActionResult GetVapidPublicKey()
     {
         var vapidSection = _configuration.GetSection("Vapid");
         var publicKey = vapidSection["PublicKey"];
@@ -43,7 +43,7 @@ public class PushController : ControllerBase
             return NotFound();
         }
 
-        return Ok(publicKey);
+        return Content(publicKey, "text/plain");
     }
 
     [Authorize]

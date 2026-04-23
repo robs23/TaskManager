@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using TodoApi.Data;
+using TodoApi.Serialization;
 using TodoApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,7 +17,12 @@ var jwtAudience = builder.Configuration["Jwt:Audience"] ?? jwtIssuer;
 builder.Services.AddDbContext<TodoDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("TodoDb")));
 builder.Services.AddOpenApi();
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new NullableUtcDateTimeJsonConverter());
+    });
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>

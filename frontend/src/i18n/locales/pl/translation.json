@@ -206,7 +206,9 @@
     "saving": "Zapisywanie...",
     "errors": {
       "loadFailed": "Nie można wczytać ustawień. Spróbuj ponownie.",
-      "saveFailed": "Nie można zapisać ustawień. Spróbuj ponownie."
+      "saveFailed": "Nie można zapisać ustawień. Spróbuj ponownie.",
+      "pushNotConfigured": "Powiadomienia push nie są skonfigurowane na tym serwerze.",
+      "pushSubscribeFailed": "Nie można włączyć powiadomień push w tej przeglądarce. Spróbuj ponownie."
     }
   }
 }

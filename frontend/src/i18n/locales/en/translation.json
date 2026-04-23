@@ -207,7 +207,9 @@
     "saving": "Saving...",
     "errors": {
       "loadFailed": "Unable to load settings. Please try again.",
-      "saveFailed": "Unable to save settings. Please try again."
+      "saveFailed": "Unable to save settings. Please try again.",
+      "pushNotConfigured": "Push notifications are not configured on this server.",
+      "pushSubscribeFailed": "Unable to enable push notifications in this browser. Please try again."
     }
   }
 }

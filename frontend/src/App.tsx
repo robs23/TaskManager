@@ -16,6 +16,8 @@ const API_BASE = '/api/todos'
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
 const SEVEN_DAYS_MS = 7 * ONE_DAY_MS
+const PUSH_NOT_CONFIGURED_ERROR = 'PUSH_NOT_CONFIGURED'
+const PUSH_SUBSCRIBE_FAILED_ERROR = 'PUSH_SUBSCRIBE_FAILED'
 
 interface TodoDependencySummary {
   id: number
@@ -218,6 +220,24 @@ const uint8ArrayToBase64 = (value: Uint8Array): string => {
   })
   return window.btoa(binary)
 }
+
+const normalizeVapidPublicKey = (value: string): string => {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1).trim()
+  }
+
+  return trimmed
+}
+
+const isVapidPublicKeyConfigured = (value: string): boolean =>
+  Boolean(value) &&
+  !value.startsWith('REPLACE_') &&
+  value.replace(/["']/g, '').length >= 50
 
 const normalizeTagList = (tags: string[]): string[] => {
   const deduped = new Set<string>()
@@ -725,9 +745,9 @@ function App() {
           throw new Error('Unable to load VAPID public key.')
         }
 
-        const vapidPublicKey = (await vapidResponse.text()).trim()
-        if (!vapidPublicKey) {
-          throw new Error('VAPID public key is missing.')
+        const vapidPublicKey = normalizeVapidPublicKey(await vapidResponse.text())
+        if (!isVapidPublicKeyConfigured(vapidPublicKey)) {
+          throw new Error(PUSH_NOT_CONFIGURED_ERROR)
         }
 
         const permission = await Notification.requestPermission()
@@ -737,10 +757,18 @@ function App() {
           return
         }
 
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-        })
+        let subscription: PushSubscription
+        try {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+          })
+        } catch (subscribeError) {
+          if (subscribeError instanceof DOMException) {
+            throw new Error(PUSH_SUBSCRIBE_FAILED_ERROR)
+          }
+          throw subscribeError
+        }
 
         const p256dhKey = subscription.getKey('p256dh')
         const authKey = subscription.getKey('auth')
@@ -762,6 +790,7 @@ function App() {
         })
 
         if (!subscribeResponse.ok) {
+          await subscription.unsubscribe()
           throw new Error('Failed to register push subscription.')
         }
 
@@ -795,7 +824,17 @@ function App() {
       setPushEnabled(false)
     } catch (pushToggleError) {
       console.error(pushToggleError)
-      setSettingsError(t('settings.errors.saveFailed'))
+      if (pushToggleError instanceof Error) {
+        if (pushToggleError.message === PUSH_NOT_CONFIGURED_ERROR) {
+          setSettingsError(t('settings.errors.pushNotConfigured'))
+        } else if (pushToggleError.message === PUSH_SUBSCRIBE_FAILED_ERROR) {
+          setSettingsError(t('settings.errors.pushSubscribeFailed'))
+        } else {
+          setSettingsError(t('settings.errors.saveFailed'))
+        }
+      } else {
+        setSettingsError(t('settings.errors.saveFailed'))
+      }
     } finally {
       setIsPushUpdating(false)
     }
